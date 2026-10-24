@@ -1,0 +1,15 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- van body -->
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M30,44h34l10,10h6a2,2 0,0 1,2 2v12a2,2 0,0 1,-2 2h-4a6,6 0,0 0,-12 0h-20a6,6 0,0 0,-12 0h-2a2,2 0,0 1,-2 -2v-22a2,2 0,0 1,2 -2z" />
+    <!-- windows -->
+    <path android:fillColor="#8B4513" android:pathData="M33,48h12v8h-12z M48,48h13v8h-13z M64,48l7,8h-7z" />
+    <!-- wheels -->
+    <path android:fillColor="#F2C14E" android:pathData="M42,70m-5,0a5,5 0,1 1,10 0a5,5 0,1 1,-10 0" />
+    <path android:fillColor="#F2C14E" android:pathData="M70,70m-5,0a5,5 0,1 1,10 0a5,5 0,1 1,-10 0" />
+    <!-- location pin -->
+    <path android:fillColor="#F2C14E"
+        android:pathData="M54,22c-5,0 -9,4 -9,9c0,7 9,13 9,13s9,-6 9,-13c0,-5 -4,-9 -9,-9zM54,34a3,3 0,1 1,0 -6a3,3 0,0 1,0 6z" />
+</vector>
