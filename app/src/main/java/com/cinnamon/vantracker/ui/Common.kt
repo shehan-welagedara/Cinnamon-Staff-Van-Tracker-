@@ -7,6 +7,7 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -47,6 +48,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -94,6 +97,12 @@ fun AppBar(title: String, onBack: (() -> Unit)? = null, actions: @Composable () 
             }
         }
         if (onBack == null) {
+            // Brand hierarchy: spaced caps eyebrow → bold title.
+            Text(
+                "KANDY MYST BY CINNAMON", style = MaterialTheme.typography.bodySmall, color = b.secondary,
+                fontWeight = FontWeight.Bold, letterSpacing = 2.sp,
+                modifier = Modifier.padding(start = 20.dp, end = 20.dp),
+            )
             Text(
                 title, style = MaterialTheme.typography.headlineLarge, color = b.ink, maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -104,6 +113,16 @@ fun AppBar(title: String, onBack: (() -> Unit)? = null, actions: @Composable () 
         }
     }
 }
+
+/** Brand card: white, 22dp radius, soft purple shadow. */
+fun Modifier.brandCard(b: BrandColors, radius: Dp = 22.dp): Modifier = this
+    .padding(horizontal = 16.dp, vertical = 6.dp)
+    .shadow(
+        elevation = if (b.dark) 0.dp else 10.dp, shape = RoundedCornerShape(radius),
+        ambientColor = b.shadow.copy(alpha = 0.18f), spotColor = b.shadow.copy(alpha = 0.18f),
+    )
+    .clip(RoundedCornerShape(radius))
+    .background(b.card)
 
 /** Inset grouped card (iOS Settings style). [accent] draws a slim status strip on the left. */
 @Composable
@@ -118,9 +137,7 @@ fun SectionCard(
     Box(
         modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(b.card)
+            .brandCard(b)
             .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier)
     ) {
         Row(Modifier.height(IntrinsicSize.Min)) {
@@ -136,14 +153,51 @@ fun SectionCard(
     }
 }
 
-/** Small grey caps label above a group of cards. */
+/** Brand eyebrow (caps, spaced, muted violet) above a group of cards. */
 @Composable
 fun SectionHeader(text: String) {
     Text(
         text.uppercase(), style = MaterialTheme.typography.bodySmall, color = TextSecondary,
-        fontWeight = FontWeight.Medium, letterSpacing = 0.6.sp,
+        fontWeight = FontWeight.Bold, letterSpacing = 1.6.sp,
         modifier = Modifier.padding(start = 32.dp, end = 32.dp, top = 22.dp, bottom = 4.dp),
     )
+}
+
+/** Brand page tab: purple gradient, flush left, one rounded corner. */
+@Composable
+fun PageTab(text: String) {
+    Text(
+        text.uppercase(), color = Color.White, style = MaterialTheme.typography.bodySmall,
+        fontWeight = FontWeight.Bold, letterSpacing = 2.sp,
+        modifier = Modifier
+            .padding(top = 12.dp, bottom = 6.dp)
+            .clip(RoundedCornerShape(topEnd = 26.dp))
+            .background(BrandGradient)
+            .padding(start = 20.dp, end = 36.dp, top = 9.dp, bottom = 9.dp),
+    )
+}
+
+/** Brand pill label: leaf corners, solid purple (or outlined). */
+@Composable
+fun PillLabel(text: String, outlined: Boolean = false) {
+    val b = Brand.colors
+    val shape = leafShape(18.dp, 3.dp)
+    Text(
+        text, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold,
+        color = if (outlined) b.accent else Color.White,
+        modifier = Modifier
+            .clip(shape)
+            .then(if (outlined) Modifier.border(1.5.dp, b.accent, shape) else Modifier.background(b.accent))
+            .padding(horizontal = 14.dp, vertical = 6.dp),
+    )
+}
+
+/** Numbered purple circle (brand "numbered steps"). */
+@Composable
+fun StepNumber(n: Int) {
+    Box(Modifier.size(26.dp).clip(CircleShape).background(Cinnamon), contentAlignment = Alignment.Center) {
+        Text(n.toString(), color = if (Brand.colors.dark) Color.Black else Color.White, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+    }
 }
 
 @Composable
@@ -158,17 +212,17 @@ fun InfoRow(label: String, value: String, valueColor: Color = Color.Unspecified)
     }
 }
 
-/** Tinted capsule label. */
+/** Tinted status label with the brand leaf corners. */
 @Composable
 fun Chip(text: String, color: Color) {
     Text(
         text,
         color = color,
         fontSize = 12.sp,
-        fontWeight = FontWeight.SemiBold,
-        fontFamily = Inter,
+        fontWeight = FontWeight.Bold,
+        fontFamily = Figtree,
         modifier = Modifier
-            .background(color.copy(alpha = 0.15f), RoundedCornerShape(50))
+            .background(color.copy(alpha = if (Brand.colors.dark) 0.24f else 0.13f), leafShape(14.dp, 3.dp))
             .padding(horizontal = 10.dp, vertical = 4.dp),
     )
 }
@@ -206,9 +260,7 @@ fun GroupCard(content: @Composable ColumnScope.() -> Unit) {
     Column(
         Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(CardColor),
+            .brandCard(Brand.colors),
         content = content,
     )
 }

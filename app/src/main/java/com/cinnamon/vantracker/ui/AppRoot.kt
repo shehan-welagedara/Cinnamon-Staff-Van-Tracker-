@@ -208,17 +208,32 @@ private fun ScreenHost(s: Session) {
 
 @Composable
 private fun Header(title: String, subtitle: String) {
-    Column(Modifier.fillMaxWidth().padding(top = 40.dp, bottom = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    // Brand cover: purple gradient with the magenta quarter-curve (brand kit, page 01).
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .padding(top = 8.dp, bottom = 20.dp)
+            .clip(RoundedCornerShape(26.dp))
+            .background(BrandGradient)
+            .height(220.dp)
+    ) {
         Box(
-            Modifier.size(84.dp).clip(RoundedCornerShape(22.dp)).background(Cinnamon),
-            contentAlignment = Alignment.Center,
-        ) {
-            Image(painterResource(R.drawable.ic_launcher_foreground), null, modifier = Modifier.size(84.dp))
+            Modifier
+                .align(Alignment.BottomEnd)
+                .size(130.dp, 90.dp)
+                .clip(RoundedCornerShape(topStart = 90.dp))
+                .background(Color(0xFF9A2580))
+        )
+        Column(Modifier.padding(24.dp)) {
+            Box(Modifier.size(56.dp).clip(RoundedCornerShape(16.dp)).background(Color.White.copy(alpha = 0.14f)), contentAlignment = Alignment.Center) {
+                Image(painterResource(R.drawable.ic_launcher_foreground), null, modifier = Modifier.size(56.dp))
+            }
+            Spacer(Modifier.height(18.dp))
+            Text("KANDY MYST BY CINNAMON", style = MaterialTheme.typography.bodySmall, letterSpacing = 2.sp,
+                color = Color.White.copy(alpha = 0.85f), fontWeight = FontWeight.Bold)
+            Text(title, style = MaterialTheme.typography.headlineLarge, color = Color.White)
+            Text(subtitle, color = Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.bodyMedium)
         }
-        Spacer(Modifier.height(16.dp))
-        Text("CINNAMON", style = MaterialTheme.typography.bodySmall, letterSpacing = 4.sp, color = Gold, fontWeight = FontWeight.SemiBold)
-        Text(title, style = MaterialTheme.typography.headlineLarge, color = CinnamonDark)
-        Text(subtitle, color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
     }
 }
 

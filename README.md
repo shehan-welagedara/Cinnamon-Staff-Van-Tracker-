@@ -68,13 +68,16 @@ OpenStreetMap is used by default. It is free and needs no key, but in some areas
 
 For the most accurate Sri Lankan maps, switch to **Google Maps**, which adds a Map/Satellite toggle. At one hotel's usage this should stay within Google's monthly free allowance, but Google requires a billing account:
 
-1. <https://console.cloud.google.com> → select (or create) the project that Firebase created → **APIs & Services → Library → Maps SDK for Android → Enable**. Set up billing when asked.
-2. **APIs & Services → Credentials → Create credentials → API key.**
-3. Restrict the key to **Android apps** with:
-   - Package name: `com.cinnamon.vantracker`
-   - SHA-1: `53:89:04:29:EF:D5:46:A2:1E:27:5F:D3:61:8A:44:E1:A8:F2:CC:E3`
-4. GitHub repo → **Settings → Secrets and variables → Actions → New repository secret:** name `MAPS_API_KEY`, value = the key.
-5. **Actions → Build APK → Run workflow.** Install the new release over the old one.
+These links open the right page for the Firebase project `cinnamon-staff-van-tracker`. If the console shows **"Failed to load"**, open the link in an Incognito window signed in with only the Google account that owns the Firebase project.
+
+1. **Billing:** <https://console.cloud.google.com/billing/linkedaccount?project=cinnamon-staff-van-tracker> → link or create a billing account. The "free trial with $300 credit" works.
+2. **Enable the API:** <https://console.cloud.google.com/apis/library/maps-android-backend.googleapis.com?project=cinnamon-staff-van-tracker> → **Enable** *Maps SDK for Android*.
+3. **Create a key:** <https://console.cloud.google.com/apis/credentials?project=cinnamon-staff-van-tracker> → **Create credentials → API key**. Create a new key rather than reusing the "auto created by Firebase" one.
+4. Edit the key:
+   - **Application restrictions:** **Android apps**, with package name `com.cinnamon.vantracker` and SHA-1 `53:89:04:29:EF:D5:46:A2:1E:27:5F:D3:61:8A:44:E1:A8:F2:CC:E3`
+   - **API restrictions:** *Maps SDK for Android* only
+5. GitHub repo → **Settings → Secrets and variables → Actions → New repository secret:** name `MAPS_API_KEY`, value = the key.
+6. **Actions → Build APK → Run workflow.** Install the new release over the old one; the maps switch to Google automatically.
 
 ### Optional GitHub secrets
 
@@ -90,7 +93,7 @@ For the most accurate Sri Lankan maps, switch to **Google Maps**, which adds a M
 - Firebase Auth and Cloud Firestore, with an offline persistent cache
 - Fused location in a foreground service; WorkManager for notifications checked every 15 minutes (no paid push server)
 - osmdroid (OpenStreetMap), or Google Maps Compose when a key is set
-- Fonts: Inter and Playfair Display (SIL Open Font License)
+- Design: Kandy Myst by Cinnamon brand kit v1.0 (Cinnamon Purple palette); font Figtree (SIL Open Font License), the kit's digital substitute for Proxima Nova
 
 ## Build locally
 

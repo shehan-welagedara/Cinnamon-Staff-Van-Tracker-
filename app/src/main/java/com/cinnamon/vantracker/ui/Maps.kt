@@ -19,6 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -55,7 +56,8 @@ data class MapPin(val lat: Double, val lng: Double, val title: String)
 /** Default camera: Kandy, until real data arrives. */
 private const val DEFAULT_LAT = 7.2906
 private const val DEFAULT_LNG = 80.6337
-private const val ROUTE_COLOR = 0xFF0A84FF
+/** Route line: Cinnamon Purple on light maps, Magenta on dark maps. */
+private fun routeColor(dark: Boolean) = if (dark) Color(0xFFDB6BC2) else Color(0xFF592C82)
 
 /** True when the build carries a Google Maps API key (GitHub secret MAPS_API_KEY). */
 val googleMapsEnabled: Boolean get() = BuildConfig.MAPS_API_KEY.isNotBlank()
@@ -127,7 +129,7 @@ private fun GoogleVanMap(
             onMapLoaded = { loaded = true },
             onMapClick = { onTap?.invoke(it.latitude, it.longitude) },
         ) {
-            if (route.size >= 2) Polyline(points = route, color = Color(ROUTE_COLOR), width = 12f)
+            if (route.size >= 2) Polyline(points = route, color = routeColor(dark), width = 12f)
             route.firstOrNull()?.let { Marker(state = MarkerState(it), title = "Start") }
             if (route.size > 1) Marker(state = MarkerState(route.last()), title = if (follow) "Van" else "End")
             pins.forEach { Marker(state = MarkerState(LatLng(it.lat, it.lng)), title = it.title) }
@@ -203,7 +205,7 @@ private fun OsmVanMap(
             if (geo.size >= 2) {
                 map.overlays.add(OsmPolyline(map).apply {
                     setPoints(geo)
-                    outlinePaint.color = ROUTE_COLOR.toInt()
+                    outlinePaint.color = routeColor(dark).toArgb()
                     outlinePaint.strokeWidth = 12f
                 })
             }

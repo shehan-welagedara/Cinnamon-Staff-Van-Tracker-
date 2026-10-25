@@ -130,7 +130,7 @@ fun StaffHome(s: Session) {
             if (label == "Home" || label == "My requests") ExtendedFloatingActionButton(
                 onClick = { s.nav.go(Screen.NewRequest()) },
                 icon = { Icon(Icons.Filled.Add, null) }, text = { Text("Request van") },
-                containerColor = Cinnamon, contentColor = Color.White, shape = RoundedCornerShape(50),
+                containerColor = Cinnamon, contentColor = MaterialTheme.colorScheme.onPrimary, shape = leafShape(28.dp, 8.dp),
             )
         },
     ) { pad ->
