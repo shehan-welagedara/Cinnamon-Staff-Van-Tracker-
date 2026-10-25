@@ -49,7 +49,6 @@ import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.views.overlay.Marker as OsmMarker
 import org.osmdroid.views.overlay.Polyline as OsmPolyline
-import org.osmdroid.views.overlay.TilesOverlay
 
 data class MapPin(val lat: Double, val lng: Double, val title: String)
 
@@ -192,7 +191,7 @@ private fun OsmVanMap(
             }
         },
         update = { map ->
-            map.overlayManager.tilesOverlay.setColorFilter(if (dark) TilesOverlay.INVERTED_COLORS else null)
+            map.overlayManager.tilesOverlay.setColorFilter(if (dark) DARK_TILES else null)
             map.overlays.clear()
             if (onTap != null) {
                 map.overlays.add(MapEventsOverlay(object : MapEventsReceiver {
@@ -241,6 +240,16 @@ private fun OsmVanMap(
         },
     )
 }
+
+/** Inverts OSM tiles and softens them into a dark map. */
+private val DARK_TILES = android.graphics.ColorMatrixColorFilter(
+    floatArrayOf(
+        -0.85f, 0f, 0f, 0f, 230f,
+        0f, -0.85f, 0f, 0f, 230f,
+        0f, 0f, -0.85f, 0f, 235f,
+        0f, 0f, 0f, 1f, 0f,
+    )
+)
 
 /** Compact night style for Google Maps (matches the app's dark mode). */
 private const val DARK_MAP_STYLE = """
