@@ -10,7 +10,7 @@ service cloud.firestore {
     function me() { return get(profilePath()).data; }
     function active() { return signedIn() && exists(profilePath()) && me().active == true && me().role != 'PENDING'; }
     function isAdmin() { return active() && me().isAdmin == true; }
-    function isManager() { return active() && (me().role in ['GM', 'OM'] || me().isAdmin == true); }
+    function isManager() { return active() && (me().role in ['GM', 'OM', 'ADMIN'] || me().isAdmin == true); }
     function isDriver() { return active() && me().role == 'DRIVER'; }
     function changed() { return request.resource.data.diff(resource.data).affectedKeys(); }
 

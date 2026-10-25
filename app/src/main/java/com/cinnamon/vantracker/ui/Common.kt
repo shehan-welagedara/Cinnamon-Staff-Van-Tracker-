@@ -12,32 +12,33 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -45,74 +46,66 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.lifecycle.LifecycleEventObserver
-import com.cinnamon.vantracker.data.TrackPoint
-import org.osmdroid.events.MapEventsReceiver
-import org.osmdroid.tileprovider.tilesource.TileSourceFactory
-import org.osmdroid.util.BoundingBox
-import org.osmdroid.util.GeoPoint
-import org.osmdroid.views.CustomZoomButtonsController
-import org.osmdroid.views.MapView
-import org.osmdroid.views.overlay.MapEventsOverlay
-import org.osmdroid.views.overlay.Marker
-import org.osmdroid.views.overlay.Polyline
 import java.util.Calendar
-
-// ------------------------------------------------------------------ theme
-
-val Cinnamon = Color(0xFF8B4513)
-val CinnamonDark = Color(0xFF5E2E0D)
-val Gold = Color(0xFFF2C14E)
-val OkGreen = Color(0xFF2E7D32)
-val WarnOrange = Color(0xFFEF6C00)
-val DangerRed = Color(0xFFC62828)
-val InfoBlue = Color(0xFF1565C0)
-
-@Composable
-fun VanTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = lightColorScheme(
-            primary = Cinnamon,
-            onPrimary = Color.White,
-            primaryContainer = Color(0xFFFFDCC4),
-            onPrimaryContainer = CinnamonDark,
-            secondary = Color(0xFF795548),
-            tertiary = Gold,
-            background = Color(0xFFFFFBF8),
-            surface = Color(0xFFFFFBF8),
-        ),
-        content = content,
-    )
-}
 
 // ------------------------------------------------------------------ building blocks
 
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * iOS-style navigation bar. Screens without [onBack] (home tabs) get a large serif title;
+ * pushed screens get a compact centred title with a "‹ Back" button in the brand tint.
+ */
 @Composable
 fun AppBar(title: String, onBack: (() -> Unit)? = null, actions: @Composable () -> Unit = {}) {
-    TopAppBar(
-        title = { Text(title, maxLines = 1) },
-        navigationIcon = {
-            if (onBack != null) IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+    val b = Brand.colors
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .background(b.background)
+            .windowInsetsPadding(WindowInsets.statusBars)
+    ) {
+        Box(Modifier.fillMaxWidth().height(48.dp).padding(horizontal = 6.dp)) {
+            if (onBack != null) {
+                Row(
+                    Modifier
+                        .align(Alignment.CenterStart)
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable { onBack() }
+                        .padding(horizontal = 4.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "Back", tint = b.accent, modifier = Modifier.size(30.dp))
+                    Text("Back", color = b.accent, style = MaterialTheme.typography.bodyLarge)
+                }
+                Text(
+                    title, style = MaterialTheme.typography.titleMedium, color = b.text, maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.align(Alignment.Center).padding(horizontal = 96.dp),
+                )
             }
-        },
-        actions = { actions() },
-        colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = Cinnamon, titleContentColor = Color.White,
-            navigationIconContentColor = Color.White, actionIconContentColor = Color.White,
-        ),
-    )
+            Row(Modifier.align(Alignment.CenterEnd), verticalAlignment = Alignment.CenterVertically) {
+                CompositionLocalProvider(LocalContentColor provides b.accent) { actions() }
+            }
+        }
+        if (onBack == null) {
+            Text(
+                title, style = MaterialTheme.typography.headlineLarge, color = b.ink, maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 8.dp),
+            )
+        } else {
+            Box(Modifier.fillMaxWidth().height(0.5.dp).background(b.separator))
+        }
+    }
 }
 
+/** Inset grouped card (iOS Settings style). [accent] draws a slim status strip on the left. */
 @Composable
 fun SectionCard(
     title: String? = null,
@@ -121,20 +114,21 @@ fun SectionCard(
     accent: Color? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Card(
-        modifier = modifier
+    val b = Brand.colors
+    Box(
+        modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 6.dp)
-            .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(b.card)
+            .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier)
     ) {
         Row(Modifier.height(IntrinsicSize.Min)) {
-            if (accent != null) Box(Modifier.width(5.dp).fillMaxHeight().background(accent))
-            Column(Modifier.padding(14.dp).fillMaxWidth()) {
+            if (accent != null) Box(Modifier.width(4.dp).fillMaxHeight().background(accent))
+            Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp).fillMaxWidth()) {
                 if (title != null) {
-                    Text(title, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = CinnamonDark)
-                    Spacer(Modifier.height(6.dp))
+                    Text(title, style = MaterialTheme.typography.titleMedium, color = b.text)
+                    Spacer(Modifier.height(8.dp))
                 }
                 content()
             }
@@ -142,47 +136,132 @@ fun SectionCard(
     }
 }
 
+/** Small grey caps label above a group of cards. */
+@Composable
+fun SectionHeader(text: String) {
+    Text(
+        text.uppercase(), style = MaterialTheme.typography.bodySmall, color = TextSecondary,
+        fontWeight = FontWeight.Medium, letterSpacing = 0.6.sp,
+        modifier = Modifier.padding(start = 32.dp, end = 32.dp, top = 22.dp, bottom = 4.dp),
+    )
+}
+
 @Composable
 fun InfoRow(label: String, value: String, valueColor: Color = Color.Unspecified) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(label, color = Color.Gray, fontSize = 14.sp)
+    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label, color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
         Spacer(Modifier.width(12.dp))
-        Text(value, fontWeight = FontWeight.Medium, fontSize = 14.sp, color = valueColor)
+        Text(
+            value, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium,
+            color = if (valueColor == Color.Unspecified) TextPrimary else valueColor,
+        )
     }
 }
 
+/** Tinted capsule label. */
 @Composable
 fun Chip(text: String, color: Color) {
     Text(
         text,
-        color = Color.White,
+        color = color,
         fontSize = 12.sp,
-        fontWeight = FontWeight.Bold,
+        fontWeight = FontWeight.SemiBold,
+        fontFamily = Inter,
         modifier = Modifier
-            .background(color, RoundedCornerShape(50))
-            .padding(horizontal = 10.dp, vertical = 3.dp),
+            .background(color.copy(alpha = 0.15f), RoundedCornerShape(50))
+            .padding(horizontal = 10.dp, vertical = 4.dp),
     )
 }
 
 @Composable
 fun Empty(text: String) {
-    Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-        Text(text, color = Color.Gray)
+    Box(Modifier.fillMaxWidth().padding(28.dp), contentAlignment = Alignment.Center) {
+        Text(text, color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
     }
 }
 
+/** Inset, tinted notice. */
 @Composable
 fun Banner(text: String, color: Color, onClick: (() -> Unit)? = null) {
-    Text(
-        text,
-        color = Color.White,
-        fontWeight = FontWeight.Medium,
-        modifier = Modifier
+    Row(
+        Modifier
             .fillMaxWidth()
-            .background(color)
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(color.copy(alpha = if (Brand.colors.dark) 0.22f else 0.12f))
             .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier)
-            .padding(horizontal = 14.dp, vertical = 10.dp),
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(8.dp).clip(CircleShape).background(color))
+        Spacer(Modifier.width(10.dp))
+        Text(text, color = TextPrimary, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+        if (onClick != null) Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = TextSecondary)
+    }
+}
+
+/** Card holding a list of tappable rows separated by hairlines. */
+@Composable
+fun GroupCard(content: @Composable ColumnScope.() -> Unit) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(CardColor),
+        content = content,
     )
+}
+
+@Composable
+fun ListRow(icon: String, text: String, last: Boolean = false, tint: Color = Color.Unspecified, value: String = "", onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable { onClick() }.padding(start = 16.dp, end = 10.dp, top = 13.dp, bottom = 13.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(icon, fontSize = 18.sp, modifier = Modifier.width(30.dp))
+        Text(text, style = MaterialTheme.typography.bodyLarge, color = if (tint == Color.Unspecified) TextPrimary else tint, modifier = Modifier.weight(1f))
+        if (value.isNotBlank()) Text(value, color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
+        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = Brand.colors.tertiary)
+    }
+    if (!last) Box(Modifier.padding(start = 46.dp).fillMaxWidth().height(0.5.dp).background(Separator))
+}
+
+/** iOS segmented control. */
+@Composable
+fun Segmented(options: List<String>, selected: Int, modifier: Modifier = Modifier, onSelect: (Int) -> Unit) {
+    val b = Brand.colors
+    Row(
+        modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(b.fill)
+            .padding(2.dp)
+    ) {
+        options.forEachIndexed { i, o ->
+            val on = i == selected
+            Box(
+                Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (on) (if (b.dark) Color(0xFF636366) else Color.White) else Color.Transparent)
+                    .clickable { onSelect(i) }
+                    .padding(vertical = 7.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(o, style = MaterialTheme.typography.bodySmall, fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal, color = b.text)
+            }
+        }
+    }
+}
+
+/** Appearance chooser: follow the phone, or force light / dark. */
+@Composable
+fun AppearancePicker() {
+    val ctx = LocalContext.current
+    Segmented(ThemeMode.entries.map { it.label }, ThemeMode.entries.indexOf(ThemePrefs.mode)) {
+        ThemePrefs.set(ctx, ThemeMode.entries[it])
+    }
 }
 
 /** Simple drop-down chooser that works the same on every Material3 version. */
@@ -246,100 +325,3 @@ fun isOnline(ctx: Context): Boolean {
     return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
 }
 
-// ------------------------------------------------------------------ map (OpenStreetMap)
-
-data class MapPin(val lat: Double, val lng: Double, val title: String)
-
-/**
- * OpenStreetMap view (osmdroid). Free, no API key; tiles already viewed are cached on the
- * phone, so recently seen areas still show offline.
- *
- * [fitKey]: whenever it changes the camera re-fits to the path/pins; [follow] keeps the
- * last point centred (live tracking).
- */
-@Composable
-fun OsmMap(
-    modifier: Modifier = Modifier,
-    path: List<TrackPoint> = emptyList(),
-    pins: List<MapPin> = emptyList(),
-    fitKey: Any? = null,
-    follow: Boolean = false,
-    onTap: ((Double, Double) -> Unit)? = null,
-) {
-    val lifecycle = LocalLifecycleOwner.current.lifecycle
-    val mapHolder = remember { mutableStateOf<MapView?>(null) }
-    DisposableEffect(lifecycle) {
-        val obs = LifecycleEventObserver { _, e ->
-            when (e) {
-                Lifecycle.Event.ON_RESUME -> mapHolder.value?.onResume()
-                Lifecycle.Event.ON_PAUSE -> mapHolder.value?.onPause()
-                else -> {}
-            }
-        }
-        lifecycle.addObserver(obs)
-        onDispose {
-            lifecycle.removeObserver(obs)
-            mapHolder.value?.onDetach()
-        }
-    }
-    AndroidView(
-        modifier = modifier,
-        factory = { ctx ->
-            MapView(ctx).apply {
-                setTileSource(TileSourceFactory.MAPNIK)
-                setMultiTouchControls(true)
-                zoomController.setVisibility(CustomZoomButtonsController.Visibility.SHOW_AND_FADEOUT)
-                controller.setZoom(14.0)
-                controller.setCenter(GeoPoint(6.9271, 79.8612)) // Colombo until data arrives
-                mapHolder.value = this
-            }
-        },
-        update = { map ->
-            map.overlays.clear()
-            if (onTap != null) {
-                map.overlays.add(MapEventsOverlay(object : MapEventsReceiver {
-                    override fun singleTapConfirmedHelper(p: GeoPoint): Boolean { onTap(p.latitude, p.longitude); return true }
-                    override fun longPressHelper(p: GeoPoint): Boolean = false
-                }))
-            }
-            val geo = path.map { GeoPoint(it.lat, it.lng) }
-            if (geo.size >= 2) {
-                map.overlays.add(Polyline(map).apply {
-                    setPoints(geo)
-                    outlinePaint.color = android.graphics.Color.rgb(21, 101, 192)
-                    outlinePaint.strokeWidth = 10f
-                })
-            }
-            if (geo.isNotEmpty()) {
-                map.overlays.add(Marker(map).apply {
-                    position = geo.first(); title = "Start"
-                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                })
-                if (geo.size > 1) map.overlays.add(Marker(map).apply {
-                    position = geo.last(); title = if (follow) "Van" else "End"
-                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                })
-            }
-            pins.forEach { p ->
-                map.overlays.add(Marker(map).apply {
-                    position = GeoPoint(p.lat, p.lng); title = p.title
-                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                })
-            }
-            val all = geo + pins.map { GeoPoint(it.lat, it.lng) }
-            if (map.tag != fitKey && all.isNotEmpty()) {
-                map.tag = fitKey
-                map.post {
-                    if (all.size == 1) {
-                        map.controller.setZoom(16.0); map.controller.setCenter(all.first())
-                    } else {
-                        runCatching { map.zoomToBoundingBox(BoundingBox.fromGeoPoints(all), false, 80) }
-                    }
-                }
-            } else if (follow && geo.isNotEmpty()) {
-                map.controller.animateTo(geo.last())
-            }
-            map.invalidate()
-        },
-    )
-}

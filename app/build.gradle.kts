@@ -24,6 +24,10 @@ android {
         buildConfigField("String", "FB_API_KEY", "\"${env("FIREBASE_API_KEY")}\"")
         buildConfigField("String", "FB_APP_ID", "\"${env("FIREBASE_APP_ID")}\"")
         buildConfigField("String", "FB_PROJECT_ID", "\"${env("FIREBASE_PROJECT_ID")}\"")
+
+        // Optional Google Maps key (GitHub secret MAPS_API_KEY). Empty = OpenStreetMap.
+        buildConfigField("String", "MAPS_API_KEY", "\"${env("MAPS_API_KEY")}\"")
+        manifestPlaceholders["MAPS_API_KEY"] = env("MAPS_API_KEY")
     }
 
     signingConfigs {
@@ -96,4 +100,6 @@ dependencies {
 
     // OpenStreetMap (open source, no API key / billing)
     implementation("org.osmdroid:osmdroid-android:6.1.20")
+    // Google Maps (only used when a MAPS_API_KEY is provided at build time)
+    implementation("com.google.maps.android:maps-compose:6.1.0")
 }

@@ -12,7 +12,8 @@ enum class Role(val label: String) {
     DRIVER("Driver"),
     HOD("Head of Department"),
     GM("General Manager"),
-    OM("Operations Manager");
+    OM("Operations Manager"),
+    ADMIN("Administrator");
 
     companion object {
         fun of(s: String?): Role = entries.firstOrNull { it.name == s } ?: PENDING
@@ -23,8 +24,11 @@ val CATEGORIES = listOf("Bank", "Laundry", "Staff Transport", "Purchasing", "Gue
 
 val DEPARTMENTS = listOf(
     "Front Office", "Housekeeping", "F&B Service", "Kitchen", "Engineering", "Finance",
-    "Human Resources", "Purchasing", "Sales & Marketing", "Security", "Management", "Transport"
+    "Human Resources", "Purchasing", "Sales & Marketing", "Security", "Administration", "Transport"
 )
+
+/** Department names that were renamed; old records are shown (and migrated) under the new name. */
+fun normDept(d: String): String = if (d == "Management") "Administration" else d
 
 data class UserProfile(
     val uid: String = "",
@@ -37,7 +41,8 @@ data class UserProfile(
     val isAdmin: Boolean = false,
     val active: Boolean = true,
 ) {
-    val isManager get() = role == Role.GM || role == Role.OM
+    /** GM, OM and Administrators can approve trips. */
+    val isManager get() = role == Role.GM || role == Role.OM || role == Role.ADMIN
     val isDriver get() = role == Role.DRIVER
     val isApproved get() = role != Role.PENDING && active
 
@@ -53,10 +58,10 @@ data class UserProfile(
             name = d.str("name"),
             email = d.str("email"),
             phone = d.str("phone"),
-            department = d.str("department"),
+            department = normDept(d.str("department")),
             role = Role.of(d.getString("role")),
             requestedRole = Role.of(d.getString("requestedRole")),
-            isAdmin = d.getBoolean("isAdmin") ?: false,
+            isAdmin = (d.getBoolean("isAdmin") ?: false) || Role.of(d.getString("role")) == Role.ADMIN,
             active = d.getBoolean("active") ?: true,
         )
     }
@@ -84,7 +89,7 @@ data class Stop(
                 lat = (m["lat"] as? Number)?.toDouble(),
                 lng = (m["lng"] as? Number)?.toDouble(),
                 requestId = m["requestId"] as? String ?: "",
-                department = m["department"] as? String ?: "",
+                department = normDept(m["department"] as? String ?: ""),
                 arrivedAt = (m["arrivedAt"] as? Number)?.toLong(),
             )
         }
@@ -135,7 +140,7 @@ data class TripRequest(
             id = d.id,
             requesterUid = d.str("requesterUid"),
             requesterName = d.str("requesterName"),
-            department = d.str("department"),
+            department = normDept(d.str("department")),
             category = d.str("category"),
             purpose = d.str("purpose"),
             stops = Stop.listFrom(d.get("stops")),
@@ -215,7 +220,7 @@ data class Trip(
             title = d.str("title"),
             category = d.str("category"),
             purpose = d.str("purpose"),
-            departments = d.strList("departments"),
+            departments = d.strList("departments").map(::normDept).distinct(),
             requestIds = d.strList("requestIds"),
             scheduleId = d.str("scheduleId"),
             stops = Stop.listFrom(d.get("stops")),
@@ -268,7 +273,7 @@ data class Schedule(
             title = d.str("title"),
             category = d.str("category"),
             purpose = d.str("purpose"),
-            department = d.str("department"),
+            department = normDept(d.str("department")),
             stops = Stop.listFrom(d.get("stops")),
             days = (d.get("days") as? List<*>).orEmpty().mapNotNull { (it as? Number)?.toInt() },
             time = d.getString("time") ?: "08:00",

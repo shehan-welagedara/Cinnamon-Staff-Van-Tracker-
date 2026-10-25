@@ -136,7 +136,7 @@ fun AdminSettingsScreen(s: Session) {
             val example = TripCalc.fuel(10.0, AppSettings(fuelPricePerLiter = price.toDoubleOrNull() ?: 0.0, kmPerLiter = kmpl.toDoubleOrNull() ?: 0.0,
                 distanceCorrectionPct = correction.toDoubleOrNull() ?: 0.0))
             Text("Example: 10 km GPS → ${TripCalc.km(example.first)} → ${TripCalc.liters(example.second)} → ${TripCalc.money(example.third, currency)}",
-                fontSize = 13.sp, color = Color.Gray)
+                fontSize = 13.sp, color = TextSecondary)
 
             SectionHeader("Hotel location (trip start/end & geofence)")
             OutlinedTextField(hotel, { hotel = it }, label = { Text("Hotel name") }, modifier = Modifier.fillMaxWidth())
@@ -188,7 +188,7 @@ fun AdminSettingsScreen(s: Session) {
         AlertDialog(
             onDismissRequest = { mapOpen = false },
             title = { Text("Tap the hotel's location") },
-            text = { OsmMap(Modifier.fillMaxWidth().height(340.dp), pins = listOfNotNull(picked), fitKey = "hotel", onTap = { a, o -> picked = MapPin(a, o, hotel) }) },
+            text = { VanMap(Modifier.fillMaxWidth().height(340.dp), pins = listOfNotNull(picked), fitKey = "hotel", onTap = { a, o -> picked = MapPin(a, o, hotel) }) },
             confirmButton = {
                 Button(onClick = {
                     picked?.let { lat = fmtCoord(it.lat); lng = fmtCoord(it.lng) }; mapOpen = false
@@ -224,8 +224,11 @@ fun UsersScreen(s: Session) {
             title = { Text(u.name) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(u.email, color = Color.Gray)
-                    Picker("Role", role.label, Role.entries.map { it.label }) { l -> role = Role.entries.first { it.label == l } }
+                    Text(u.email, color = TextSecondary)
+                    Picker("Role", role.label, Role.entries.map { it.label }) { l ->
+                        role = Role.entries.first { it.label == l }
+                        if (role == Role.ADMIN) admin = true
+                    }
                     Picker("Department", dept, DEPARTMENTS) { dept = it }
                     Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(admin, { admin = it }); Text("Administrator") }
                     Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(active, { active = it }); Text("Active") }
@@ -233,7 +236,7 @@ fun UsersScreen(s: Session) {
             },
             confirmButton = {
                 Button(onClick = {
-                    Repo.updateUser(u.uid, mapOf("role" to role.name, "department" to dept, "isAdmin" to admin, "active" to active))
+                    Repo.updateUser(u.uid, mapOf("role" to role.name, "department" to dept, "isAdmin" to (admin || role == Role.ADMIN), "active" to active))
                     edit = null
                 }) { Text(if (u.role == Role.PENDING) "Approve" else "Save") }
             },
@@ -244,13 +247,13 @@ fun UsersScreen(s: Session) {
 
 @Composable
 private fun UserCard(u: UserProfile, onClick: () -> Unit) {
-    SectionCard(onClick = onClick, accent = if (u.role == Role.PENDING) WarnOrange else if (!u.active) Color.Gray else OkGreen) {
+    SectionCard(onClick = onClick, accent = if (u.role == Role.PENDING) WarnOrange else if (!u.active) TextSecondary else OkGreen) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(u.name, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
             Chip(if (u.role == Role.PENDING) "Wants: ${u.requestedRole.label}" else u.role.label, if (u.role == Role.PENDING) WarnOrange else Cinnamon)
         }
-        Text("${u.department} · ${u.email}" + if (u.isAdmin) " · Admin" else "", fontSize = 13.sp, color = Color.Gray)
-        if (u.phone.isNotBlank()) Text(u.phone, fontSize = 13.sp, color = Color.Gray)
+        Text("${u.department} · ${u.email}" + if (u.isAdmin) " · Admin" else "", fontSize = 13.sp, color = TextSecondary)
+        if (u.phone.isNotBlank()) Text(u.phone, fontSize = 13.sp, color = TextSecondary)
     }
 }
 
@@ -269,13 +272,13 @@ fun SchedulesScreen(s: Session) {
         LazyColumn(Modifier.padding(pad)) {
             item {
                 Text("Pre-approved daily runs (staff transport, laundry pickup…). The driver can start them without waiting for GM/OM approval.",
-                    modifier = Modifier.padding(16.dp), color = Color.Gray)
+                    modifier = Modifier.padding(16.dp), color = TextSecondary)
             }
             if (list.isEmpty()) item { Empty("No schedules yet. Tap + to add one.") }
             items(list, key = { it.id }) { sc ->
-                SectionCard("${sc.time} · ${sc.title}", onClick = { edit = sc }, accent = if (sc.active) InfoBlue else Color.Gray) {
+                SectionCard("${sc.time} · ${sc.title}", onClick = { edit = sc }, accent = if (sc.active) InfoBlue else TextSecondary) {
                     Text(sc.days.sorted().joinToString(" ") { DAY_NAMES[(it - 1).coerceIn(0, 6)] }, fontSize = 13.sp)
-                    Text("${sc.category} · ${sc.department}", fontSize = 13.sp, color = Color.Gray)
+                    Text("${sc.category} · ${sc.department}", fontSize = 13.sp, color = TextSecondary)
                     if (sc.stops.isNotEmpty()) Text("Stops: " + sc.stops.joinToString(" → ") { it.name }, fontSize = 13.sp)
                     if (!sc.active) Text("Paused", color = WarnOrange)
                 }
@@ -349,7 +352,7 @@ fun FuelLogsScreen(s: Session) {
                     InfoRow("Configured", "${s.settings.kmPerLiter} km/L")
                     InfoRow("Actual (avg of fill-ups)", if (economies.isEmpty()) "need 2+ fill-ups with odometer" else "%.2f km/L".format(economies.average()))
                     InfoRow("Fuel bought (listed)", "${TripCalc.liters(logs.sumOf { it.liters })} · ${TripCalc.money(logs.sumOf { it.cost }, s.settings.currency)}")
-                    Text("Tip: fill the tank fully each time for accurate km/L, then update Settings.", fontSize = 12.sp, color = Color.Gray)
+                    Text("Tip: fill the tank fully each time for accurate km/L, then update Settings.", fontSize = 12.sp, color = TextSecondary)
                 }
             }
             if (logs.isEmpty()) item { Empty("No fill-ups recorded.") }
@@ -377,7 +380,7 @@ fun ShareSetupScreen(s: Session) {
         Column(Modifier.padding(pad).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Install the APK on the van phone and on each HOD / manager phone, then paste this code on the first screen. Only share it inside the hotel.")
             Text(code, fontFamily = FontFamily.Monospace, fontSize = 12.sp,
-                modifier = Modifier.fillMaxWidth().background(Color(0xFFF3EDE8), RoundedCornerShape(8.dp)).padding(12.dp))
+                modifier = Modifier.fillMaxWidth().background(FillColor, RoundedCornerShape(8.dp)).padding(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = {
                     ctx.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(ClipData.newPlainText("Van Tracker setup", code))
@@ -387,7 +390,7 @@ fun ShareSetupScreen(s: Session) {
                         .putExtra(Intent.EXTRA_TEXT, "Van Tracker setup code:\n$code"), "Share setup code"))
                 }) { Icon(Icons.Filled.Share, null); Spacer(Modifier.width(4.dp)); Text("Share") }
             }
-            Text("After they create an account, approve them under Users & roles.", color = Color.Gray)
+            Text("After they create an account, approve them under Users & roles.", color = TextSecondary)
         }
     }
 }
@@ -450,7 +453,7 @@ fun ReportsScreen(s: Session) {
 @Composable
 private fun BreakdownCard(title: String, data: Map<String, Double>, currency: String) {
     SectionCard(title) {
-        if (data.isEmpty()) Text("No data", color = Color.Gray)
+        if (data.isEmpty()) Text("No data", color = TextSecondary)
         val max = data.values.maxOrNull()?.takeIf { it > 0 } ?: 1.0
         data.entries.sortedByDescending { it.value }.forEach { (k, v) ->
             Column(Modifier.padding(vertical = 3.dp)) {

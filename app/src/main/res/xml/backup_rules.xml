@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 11 and older: back up only the backend connection and appearance choice,
+     so a reinstall on the same Google account reconnects without the setup code. -->
+<full-backup-content>
+    <include domain="sharedpref" path="backend.xml" />
+    <include domain="sharedpref" path="ui.xml" />
+</full-backup-content>

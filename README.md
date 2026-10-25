@@ -15,7 +15,7 @@ Every push to `main` builds a new APK and publishes it under **Releases** (`VanT
 | **Driver** | Dedicated van phone | Approved and scheduled trips list. Start a trip once passengers are on board and end it back at the hotel. Live map, distance, timer, stop check-off. Fuel fill-up log. Reasons for unapproved movement. |
 | **Staff – HOD** | Heads of department | Request the van (purpose, stops on a map, time, passengers). Add a stop to a trip or daily run that is already going. Track the status of each request. Live van location. Department trip history. |
 | **Staff – GM / OM** | Approvers | Approve or reject requests, with a comment. Combine a request with an existing trip (the app suggests trips leaving around the same time). Live map. Alerts. Monthly reports with CSV export. Accept or flag reasons for unapproved movement. |
-| **Admin** (flag on any user) | | Fuel price, km/L, GPS correction %, hotel location and geofence, Bluetooth name, movement thresholds, reason deadline. Users and roles. Recurring pre-approved schedules. Fuel log (actual vs configured km/L). Share a setup code with other phones. |
+| **Administrator** (role, or admin flag on any user) | | Fuel price, km/L, GPS correction %, hotel location and geofence, Bluetooth name, movement thresholds, reason deadline. Users and roles. Recurring pre-approved schedules. Fuel log (actual vs configured km/L). Share a setup code with other phones. |
 
 **How trips are tracked**
 
@@ -54,11 +54,34 @@ Every push to `main` builds a new APK and publishes it under **Releases** (`VanT
 
     Keep the phone on the van charger.
 
+## Updating the app (keeps all data)
+
+- The app checks GitHub Releases. When a newer version exists, a blue **Update available** banner appears on the home screen; **More → About → Check for updates** does the same on demand.
+- Tap the banner, download the APK, and open it. Android installs it **over** the existing app, so the setup, sign-in, settings, and even a trip in progress are all kept.
+- Every build is signed with the same key (`app/dev-signing.jks`). Don't uninstall the app before updating, and don't change the key, or phones will refuse the update.
+- Trips, requests, users and settings live in Firestore, not on the phone, so updates never touch them.
+- The Firebase connection and the Light/Dark choice are included in Android's own backup. On a reinstall with the same Google account, the phone reconnects without the setup code. Adding the `FIREBASE_*` secrets below removes the setup step entirely.
+
+## Maps
+
+OpenStreetMap is used by default. It is free and needs no key, but in some areas its place names are out of date. Anyone can correct them at <https://www.openstreetmap.org>, and fixes appear in the app within days.
+
+For the most accurate Sri Lankan maps, switch to **Google Maps**, which adds a Map/Satellite toggle. At one hotel's usage this should stay within Google's monthly free allowance, but Google requires a billing account:
+
+1. <https://console.cloud.google.com> → select (or create) the project that Firebase created → **APIs & Services → Library → Maps SDK for Android → Enable**. Set up billing when asked.
+2. **APIs & Services → Credentials → Create credentials → API key.**
+3. Restrict the key to **Android apps** with:
+   - Package name: `com.cinnamon.vantracker`
+   - SHA-1: `53:89:04:29:EF:D5:46:A2:1E:27:5F:D3:61:8A:44:E1:A8:F2:CC:E3`
+4. GitHub repo → **Settings → Secrets and variables → Actions → New repository secret:** name `MAPS_API_KEY`, value = the key.
+5. **Actions → Build APK → Run workflow.** Install the new release over the old one.
+
 ### Optional GitHub secrets
 
 | Secret | Purpose |
 |---|---|
 | `FIREBASE_API_KEY`, `FIREBASE_APP_ID`, `FIREBASE_PROJECT_ID` | Bake the Firebase config into the APK, so phones skip the setup code |
+| `MAPS_API_KEY` | Use Google Maps instead of OpenStreetMap (see *Maps*) |
 | `SIGNING_KEYSTORE_BASE64`, `SIGNING_STORE_PASSWORD`, `SIGNING_KEY_ALIAS`, `SIGNING_KEY_PASSWORD` | Sign with a private key. The repo ships a development key (`app/dev-signing.jks`) so each build can update the last one. Switching keys means uninstalling the app once. |
 
 ## Tech stack
@@ -66,7 +89,8 @@ Every push to `main` builds a new APK and publishes it under **Releases** (`VanT
 - Kotlin and Jetpack Compose (Material 3), min Android 8.0
 - Firebase Auth and Cloud Firestore, with an offline persistent cache
 - Fused location in a foreground service; WorkManager for notifications checked every 15 minutes (no paid push server)
-- osmdroid (OpenStreetMap)
+- osmdroid (OpenStreetMap), or Google Maps Compose when a key is set
+- Fonts: Inter and Playfair Display (SIL Open Font License)
 
 ## Build locally
 

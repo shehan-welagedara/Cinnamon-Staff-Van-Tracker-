@@ -138,9 +138,11 @@ fun DriverSetupScreen(s: Session) {
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                     onClick = { TrackingService.start(ctx); s.nav.back() },
                 ) { Text("Start van guard") }
+                SectionHeader("Appearance")
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) { AppearancePicker() }
                 Text(
                     "Tip: in the phone's settings also disable “Pause app activity if unused” and keep Location ON permanently.",
-                    color = Color.Gray, fontSize = 13.sp, modifier = Modifier.padding(16.dp),
+                    color = TextSecondary, fontSize = 13.sp, modifier = Modifier.padding(16.dp),
                 )
             }
         }
@@ -150,7 +152,7 @@ fun DriverSetupScreen(s: Session) {
 @Composable
 private fun PermissionRow(label: String, ok: Boolean, enabled: Boolean = true, onGrant: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(if (ok) "✅" else "⚠️", fontSize = 20.sp)
+        Text(if (ok) "✅" else "⚠️", fontSize = 18.sp)
         Spacer(Modifier.width(8.dp))
         Text(label, modifier = Modifier.weight(1f))
         if (!ok) OutlinedButton(enabled = enabled, onClick = onGrant) { Text("Grant") }
@@ -184,12 +186,12 @@ fun DriverHome(s: Session) {
     val recording = live.state.mode != TrackMode.GUARD
 
     Scaffold(topBar = {
-        AppBar("Driver · ${s.settings.vehicleName}") {
+        AppBar(s.settings.vehicleName) {
             IconButton(onClick = { s.nav.go(Screen.DriverSetup) }) { Icon(Icons.Filled.Settings, "Setup") }
-            IconButton(onClick = { menu = true }) { Icon(Icons.Filled.ExitToApp, "Sign out") }
         }
     }) { pad ->
         LazyColumn(Modifier.padding(pad).fillMaxSize()) {
+            item { UpdateBanner() }
             if (!online) item { Banner("Offline – trips are still recorded and will sync automatically.", WarnOrange) }
             if (!permsOk) item { Banner("Setup needed: tap to grant location permissions.", DangerRed) { s.nav.go(Screen.DriverSetup) } }
             if (live.state.mode == TrackMode.UNAUTHORIZED) item {
@@ -254,10 +256,17 @@ fun DriverHome(s: Session) {
                 }
             }
             item {
-                Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { s.nav.go(Screen.FuelEntry) }, modifier = Modifier.weight(1f)) { Text("⛽ Fuel fill-up") }
-                    OutlinedButton(onClick = { s.nav.go(Screen.Trips) }, modifier = Modifier.weight(1f)) { Text("Trip history") }
+                SectionHeader("Driver")
+                GroupCard {
+                    ListRow("⛽", "Fuel fill-up") { s.nav.go(Screen.FuelEntry) }
+                    ListRow("🗂", "Trip history") { s.nav.go(Screen.Trips) }
+                    ListRow("📱", "Van phone setup") { s.nav.go(Screen.DriverSetup) }
+                    ListRow("🚪", "Sign out", last = true, tint = DangerRed) { menu = true }
                 }
+                SectionHeader("Appearance")
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) { AppearancePicker() }
+                AboutCard()
+                Spacer(Modifier.height(24.dp))
             }
         }
     }
@@ -307,18 +316,12 @@ fun DriverHome(s: Session) {
 }
 
 @Composable
-fun SectionHeader(text: String) {
-    Text(text, fontWeight = FontWeight.Bold, color = Cinnamon, fontSize = 15.sp,
-        modifier = Modifier.padding(start = 16.dp, top = 14.dp, bottom = 2.dp))
-}
-
-@Composable
 fun TripCard(t: Trip, s: Session, onClick: (() -> Unit)? = null, actions: @Composable () -> Unit = {}) {
     val color = when {
         t.type == TripType.UNAUTHORIZED -> DangerRed
         t.status == TripStatus.IN_PROGRESS -> OkGreen
         t.status == TripStatus.READY -> InfoBlue
-        t.status == TripStatus.CANCELLED -> Color.Gray
+        t.status == TripStatus.CANCELLED -> TextSecondary
         else -> Cinnamon
     }
     SectionCard(onClick = onClick, accent = color) {
@@ -326,7 +329,7 @@ fun TripCard(t: Trip, s: Session, onClick: (() -> Unit)? = null, actions: @Compo
             Text(t.title, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
             Chip(if (t.type == TripType.UNAUTHORIZED && t.status != TripStatus.IN_PROGRESS) "Unapproved" else t.status.label, color)
         }
-        if (t.purpose.isNotBlank()) Text(t.purpose, fontSize = 13.sp, color = Color.DarkGray)
+        if (t.purpose.isNotBlank()) Text(t.purpose, fontSize = 13.sp, color = TextSecondary)
         val time = t.startTime ?: t.plannedTime
         if (time > 0) InfoRow(if (t.startTime != null) "Started" else "Planned", TripCalc.dateTime(time))
         if (t.departments.isNotEmpty()) InfoRow("Departments", t.departments.joinToString(", "))
@@ -370,7 +373,7 @@ fun ActiveTripScreen(s: Session) {
     Scaffold(topBar = { AppBar(if (unauthorized) "Unapproved movement" else "Trip in progress", onBack = { s.nav.back() }) }) { pad ->
         Column(Modifier.padding(pad).fillMaxSize()) {
             if (unauthorized) Banner("No approved trip. Your route is recorded and management is notified. Enter the reason below.", DangerRed)
-            OsmMap(
+            VanMap(
                 modifier = Modifier.fillMaxWidth().height(260.dp),
                 path = live.points,
                 fitKey = st.tripId,
@@ -392,7 +395,7 @@ fun ActiveTripScreen(s: Session) {
                             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 2.dp)) {
                                 Column(Modifier.weight(1f)) {
                                     Text("${i + 1}. ${stop.name}", fontWeight = FontWeight.Medium)
-                                    if (stop.department.isNotBlank()) Text(stop.department, fontSize = 12.sp, color = Color.Gray)
+                                    if (stop.department.isNotBlank()) Text(stop.department, fontSize = 12.sp, color = TextSecondary)
                                 }
                                 if (stop.arrivedAt != null) Text("✅ ${TripCalc.time(stop.arrivedAt)}", color = OkGreen)
                                 else OutlinedButton(onClick = { Repo.markStopArrived(t, i) }) { Text("Arrived") }
@@ -481,7 +484,7 @@ fun FuelEntryScreen(s: Session) {
     var saved by remember { mutableStateOf(false) }
     Scaffold(topBar = { AppBar("Fuel fill-up", onBack = { s.nav.back() }) }) { pad ->
         Column(Modifier.padding(pad).padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Recording fill-ups lets the admin compare real km/L against the configured ${s.settings.kmPerLiter} km/L.", color = Color.Gray)
+            Text("Recording fill-ups lets the admin compare real km/L against the configured ${s.settings.kmPerLiter} km/L.", color = TextSecondary)
             val num = KeyboardOptions(keyboardType = KeyboardType.Decimal)
             OutlinedTextField(liters, { liters = it }, label = { Text("Litres") }, keyboardOptions = num, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(cost, { cost = it }, label = { Text("Total cost (${s.settings.currency})") }, keyboardOptions = num, modifier = Modifier.fillMaxWidth())

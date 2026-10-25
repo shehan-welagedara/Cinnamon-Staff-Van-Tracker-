@@ -1,6 +1,15 @@
 package com.cinnamon.vantracker.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.ui.draw.clip
+import com.cinnamon.vantracker.data.Role
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -97,10 +106,17 @@ fun StaffHome(s: Session) {
     Scaffold(
         topBar = { AppBar(if (label == "Home") s.settings.vehicleName else label) },
         bottomBar = {
-            NavigationBar {
+            // iOS-style tab bar: hairline on top, tinted icon, no pill indicator.
+            Column {
+            Box(Modifier.fillMaxWidth().height(0.5.dp).background(Separator))
+            NavigationBar(containerColor = CardColor, tonalElevation = 0.dp) {
                 tabs.forEachIndexed { i, t ->
                     NavigationBarItem(
                         selected = i == tab, onClick = { s.nav.homeTab = i }, label = { Text(t.label, fontSize = 11.sp) },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = Cinnamon, selectedTextColor = Cinnamon, indicatorColor = Color.Transparent,
+                            unselectedIconColor = TextSecondary, unselectedTextColor = TextSecondary,
+                        ),
                         icon = {
                             if (t.badge > 0) BadgedBox(badge = { Badge { Text(t.badge.toString()) } }) { Icon(t.icon, t.label) }
                             else Icon(t.icon, t.label)
@@ -108,15 +124,18 @@ fun StaffHome(s: Session) {
                     )
                 }
             }
+            }
         },
         floatingActionButton = {
             if (label == "Home" || label == "My requests") ExtendedFloatingActionButton(
                 onClick = { s.nav.go(Screen.NewRequest()) },
                 icon = { Icon(Icons.Filled.Add, null) }, text = { Text("Request van") },
+                containerColor = Cinnamon, contentColor = Color.White, shape = RoundedCornerShape(50),
             )
         },
     ) { pad ->
         LazyColumn(Modifier.padding(pad).fillMaxSize()) {
+            item { UpdateBanner() }
             if (!online) item { Banner("Offline – showing saved data. Changes sync when back online.", WarnOrange) }
             when (label) {
                 "Home" -> homeTab(s, pending.size, openAlerts)
@@ -152,7 +171,7 @@ private fun LiveVanCard(s: Session) {
     val l = live
     SectionCard("Van now", onClick = { s.nav.go(Screen.LiveMap) }) {
         if (l == null || l.updatedAt == 0L) {
-            Text("No position yet – the van phone has not reported.", color = Color.Gray)
+            Text("No position yet – the van phone has not reported.", color = TextSecondary)
         } else {
             val (text, color) = when (l.mode) {
                 "TRIP" -> "On trip: ${l.tripTitle}" to OkGreen
@@ -161,7 +180,7 @@ private fun LiveVanCard(s: Session) {
             }
             Chip(text, color)
             Spacer(Modifier.height(6.dp))
-            OsmMap(Modifier.fillMaxWidth().height(160.dp), pins = listOf(MapPin(l.lat, l.lng, "Van")), fitKey = "live")
+            VanMap(Modifier.fillMaxWidth().height(160.dp), pins = listOf(MapPin(l.lat, l.lng, "Van")), fitKey = "live")
             InfoRow("Speed", "${l.speedKmh.toInt()} km/h")
             InfoRow("Last update", TripCalc.dateTime(l.updatedAt))
             if (l.driverName.isNotBlank()) InfoRow("Driver", l.driverName)
@@ -188,7 +207,7 @@ private fun UpcomingTrips(s: Session) {
     }
     todays.forEach { sc ->
         SectionCard("${sc.title} · ${sc.time}", accent = InfoBlue) {
-            Text("Scheduled daily run (pre-approved)", fontSize = 13.sp, color = Color.Gray)
+            Text("Scheduled daily run (pre-approved)", fontSize = 13.sp, color = TextSecondary)
             if (sc.stops.isNotEmpty()) Text("Stops: " + sc.stops.joinToString(" → ") { it.name }, fontSize = 13.sp)
             OutlinedButton(onClick = { s.nav.go(Screen.NewRequest(Repo.scheduleTarget(sc), "${sc.title} (${sc.time})")) }) {
                 Text("+ Add my stop to this run")
@@ -214,7 +233,7 @@ fun RequestCard(r: TripRequest, s: Session, actions: @Composable () -> Unit = {}
         RequestStatus.APPROVED -> InfoBlue
         RequestStatus.IN_PROGRESS -> OkGreen
         RequestStatus.COMPLETED -> Cinnamon
-        else -> Color.Gray
+        else -> TextSecondary
     }
     SectionCard(accent = color, onClick = if (r.tripId.isNotBlank()) ({ s.nav.go(Screen.TripDetail(r.tripId)) }) else null) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -227,10 +246,10 @@ fun RequestCard(r: TripRequest, s: Session, actions: @Composable () -> Unit = {}
         InfoRow("Passengers", r.passengers.toString())
         if (r.stops.isNotEmpty()) Text("Stops: " + r.stops.joinToString(" → ") { it.name }, fontSize = 13.sp)
         if (r.joinTargetLabel.isNotBlank()) Text("Wants to join: ${r.joinTargetLabel}", color = InfoBlue, fontSize = 13.sp)
-        if (r.notes.isNotBlank()) Text("Notes: ${r.notes}", fontSize = 13.sp, color = Color.DarkGray)
+        if (r.notes.isNotBlank()) Text("Notes: ${r.notes}", fontSize = 13.sp, color = TextSecondary)
         if (r.approverName.isNotBlank()) Text(
             "${r.status.label} by ${r.approverName}" + (if (r.decisionComment.isNotBlank()) ": “${r.decisionComment}”" else ""),
-            fontSize = 13.sp, color = Color.DarkGray,
+            fontSize = 13.sp, color = TextSecondary,
         )
         actions()
     }
@@ -308,7 +327,7 @@ fun NewRequestScreen(s: Session, joinTarget: String, joinLabel: String) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(st.name, { v -> stops[i] = st.copy(name = v) }, label = { Text("Stop ${i + 1}") }, modifier = Modifier.weight(1f))
                     IconButton(onClick = { pickIndex = i }) {
-                        Icon(Icons.Filled.Place, "Pick on map", tint = if (st.lat != null) OkGreen else Color.Gray)
+                        Icon(Icons.Filled.Place, "Pick on map", tint = if (st.lat != null) OkGreen else TextSecondary)
                     }
                 }
             }
@@ -343,7 +362,7 @@ fun NewRequestScreen(s: Session, joinTarget: String, joinLabel: String) {
                     s.nav.back()
                 },
             ) { Text(if (autoApprove) "Create trip" else "Send for approval") }
-            Text("Your GM / Operations Manager will be notified. You'll see the decision here.", color = Color.Gray, fontSize = 13.sp)
+            Text("Your GM / Operations Manager will be notified. You'll see the decision here.", color = TextSecondary, fontSize = 13.sp)
         }
     }
 
@@ -354,7 +373,7 @@ fun NewRequestScreen(s: Session, joinTarget: String, joinLabel: String) {
             onDismissRequest = { pickIndex = -1 },
             title = { Text("Tap the destination on the map") },
             text = {
-                OsmMap(
+                VanMap(
                     Modifier.fillMaxWidth().height(320.dp),
                     pins = listOfNotNull(picked) + if (s.settings.hotelSet) listOf(MapPin(s.settings.hotelLat, s.settings.hotelLng, s.settings.hotelName)) else emptyList(),
                     fitKey = "pick$idx",
@@ -484,7 +503,7 @@ fun TripDetailScreen(s: Session, id: String) {
     Scaffold(topBar = { AppBar("Trip details", onBack = { s.nav.back() }) }) { pad ->
         if (t == null) { Empty("Loading…"); return@Scaffold }
         Column(Modifier.padding(pad).verticalScroll(rememberScrollState())) {
-            OsmMap(
+            VanMap(
                 Modifier.fillMaxWidth().height(300.dp),
                 path = points,
                 pins = t.stops.filter { it.lat != null && it.lng != null }.map { MapPin(it.lat!!, it.lng!!, it.name) },
@@ -552,7 +571,7 @@ fun LiveMapScreen(s: Session) {
                 if (l != null && l.updatedAt > 0) add(MapPin(l.lat, l.lng, "Van"))
                 if (s.settings.hotelSet) add(MapPin(s.settings.hotelLat, s.settings.hotelLng, s.settings.hotelName))
             }
-            OsmMap(Modifier.fillMaxWidth().weight(1f), path = path, pins = pins, fitKey = "live-${l?.tripId}")
+            VanMap(Modifier.fillMaxWidth().weight(1f), path = path, pins = pins, fitKey = "live-${l?.tripId}")
             if (l != null) SectionCard {
                 InfoRow("Status", when (l.mode) { "TRIP" -> "On trip"; "UNAUTHORIZED" -> "Moving without approval"; "GUARD" -> "Parked"; else -> l.mode },
                     if (l.mode == "UNAUTHORIZED") DangerRed else Color.Unspecified)
@@ -572,10 +591,10 @@ private fun LazyListScope.alertsList(s: Session, alerts: List<AlertItem>) {
     if (alerts.isEmpty()) item { Empty("No alerts.") }
     items(alerts, key = { it.id }) { a ->
         val color = when (a.severity) { "HIGH" -> DangerRed; "WARN" -> WarnOrange; else -> InfoBlue }
-        SectionCard(a.title, accent = if (a.acknowledged) Color.LightGray else color,
+        SectionCard(a.title, accent = if (a.acknowledged) Separator else color,
             onClick = if (a.tripId.isNotBlank()) ({ s.nav.go(Screen.TripDetail(a.tripId)) }) else null) {
             Text(a.message, fontSize = 14.sp)
-            Text(TripCalc.dateTime(a.createdAt), fontSize = 12.sp, color = Color.Gray)
+            Text(TripCalc.dateTime(a.createdAt), fontSize = 12.sp, color = TextSecondary)
             if (a.acknowledged) Text("✔ ${a.acknowledgedBy}", fontSize = 12.sp, color = OkGreen)
             else TextButton(onClick = { Repo.ackAlert(a.id, s.me.name) }) { Text("Acknowledge") }
         }
@@ -599,29 +618,42 @@ private fun LazyListScope.moreMenu(s: Session) {
 @Composable
 private fun MoreBody(s: Session) {
     val ctx = LocalContext.current
-    SectionCard(s.me.name) {
-        InfoRow("Role", s.me.role.label + if (s.me.isAdmin) " · Admin" else "")
-        InfoRow("Department", s.me.department)
-        InfoRow("Email", s.me.email)
+    SectionCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(52.dp).clip(CircleShape).background(Cinnamon.copy(alpha = 0.15f)), contentAlignment = Alignment.Center) {
+                Text(s.me.name.split(" ").mapNotNull { it.firstOrNull()?.uppercase() }.take(2).joinToString(""),
+                    color = Cinnamon, style = MaterialTheme.typography.titleMedium)
+            }
+            Spacer(Modifier.width(14.dp))
+            Column {
+                Text(s.me.name, style = MaterialTheme.typography.titleMedium)
+                Text(s.me.role.label + if (s.me.isAdmin && s.me.role != Role.ADMIN) " · Admin" else "",
+                    color = TextSecondary, style = MaterialTheme.typography.bodySmall)
+                Text("${s.me.department} · ${s.me.email}", color = TextSecondary, style = MaterialTheme.typography.bodySmall)
+            }
+        }
     }
-    @Composable
-    fun entry(text: String, onClick: () -> Unit) {
-        Text(text, fontSize = 16.sp, modifier = Modifier.fillMaxWidth().clickable { onClick() }.padding(horizontal = 20.dp, vertical = 14.dp))
-    }
-    entry("🗺  Live van location") { s.nav.go(Screen.LiveMap) }
-    if (s.canApprove) {
-        entry("📊  Reports & costs") { s.nav.go(Screen.Reports) }
-        entry("📝  My own requests") { s.nav.go(Screen.MyRequests) }
-        entry("⚠  Movements waiting for a reason") { s.nav.go(Screen.Reasons) }
+    SectionHeader("Van")
+    GroupCard {
+        ListRow("🗺", "Live van location", last = !s.canApprove) { s.nav.go(Screen.LiveMap) }
+        if (s.canApprove) {
+            ListRow("📊", "Reports & costs") { s.nav.go(Screen.Reports) }
+            ListRow("📝", "My own requests") { s.nav.go(Screen.MyRequests) }
+            ListRow("⚠️", "Movements waiting for a reason", last = true) { s.nav.go(Screen.Reasons) }
+        }
     }
     if (s.me.isAdmin) {
         SectionHeader("Administration")
-        entry("⚙  Van, fuel & tracking settings") { s.nav.go(Screen.AdminSettings) }
-        entry("👥  Users & roles") { s.nav.go(Screen.Users) }
-        entry("🔁  Recurring schedules") { s.nav.go(Screen.Schedules) }
-        entry("⛽  Fuel fill-up log") { s.nav.go(Screen.FuelLogs) }
-        entry("📲  Share setup code with other phones") { s.nav.go(Screen.ShareSetup) }
+        GroupCard {
+            ListRow("⚙️", "Van, fuel & tracking settings") { s.nav.go(Screen.AdminSettings) }
+            ListRow("👥", "Users & roles") { s.nav.go(Screen.Users) }
+            ListRow("🔁", "Recurring schedules") { s.nav.go(Screen.Schedules) }
+            ListRow("⛽", "Fuel fill-up log") { s.nav.go(Screen.FuelLogs) }
+            ListRow("📲", "Share setup code with other phones", last = true) { s.nav.go(Screen.ShareSetup) }
+        }
     }
-    Spacer(Modifier.width(1.dp))
-    entry("🚪  Sign out") { signOut(ctx) }
+    SectionHeader("Appearance")
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) { AppearancePicker() }
+    AboutCard()
+    GroupCard { ListRow("🚪", "Sign out", last = true, tint = DangerRed) { signOut(ctx) } }
 }

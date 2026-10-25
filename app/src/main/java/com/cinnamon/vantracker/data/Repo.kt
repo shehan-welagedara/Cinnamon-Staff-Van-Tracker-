@@ -58,7 +58,12 @@ object Repo {
     }
 
     fun profileFlow(uid: String) = docFlow(users.document(uid)).map { d ->
-        if (d != null && d.exists()) UserProfile.from(d) else null
+        if (d != null && d.exists()) {
+            // One-time data migration for renamed departments (e.g. Management → Administration).
+            val raw = d.getString("department") ?: ""
+            if (raw.isNotBlank() && normDept(raw) != raw) users.document(uid).update("department", normDept(raw))
+            UserProfile.from(d)
+        } else null
     }
 
     fun settingsFlow() = docFlow(settingsDoc).map { AppSettings.from(it) }

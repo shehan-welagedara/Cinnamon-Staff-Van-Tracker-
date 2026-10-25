@@ -2,6 +2,8 @@ package com.cinnamon.vantracker.ui
 
 import android.app.Activity
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,6 +14,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -35,6 +39,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.painterResource
+import com.cinnamon.vantracker.R
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -201,10 +208,17 @@ private fun ScreenHost(s: Session) {
 
 @Composable
 private fun Header(title: String, subtitle: String) {
-    Column(Modifier.fillMaxWidth().padding(top = 32.dp, bottom = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("🚐", fontSize = 48.sp)
-        Text(title, fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Cinnamon)
-        Text(subtitle, color = Color.Gray)
+    Column(Modifier.fillMaxWidth().padding(top = 40.dp, bottom = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            Modifier.size(84.dp).clip(RoundedCornerShape(22.dp)).background(Cinnamon),
+            contentAlignment = Alignment.Center,
+        ) {
+            Image(painterResource(R.drawable.ic_launcher_foreground), null, modifier = Modifier.size(84.dp))
+        }
+        Spacer(Modifier.height(16.dp))
+        Text("CINNAMON", style = MaterialTheme.typography.bodySmall, letterSpacing = 4.sp, color = Gold, fontWeight = FontWeight.SemiBold)
+        Text(title, style = MaterialTheme.typography.headlineLarge, color = CinnamonDark)
+        Text(subtitle, color = TextSecondary, style = MaterialTheme.typography.bodyMedium)
     }
 }
 
@@ -286,7 +300,7 @@ fun LoginScreen() {
                 Backend.clearConfig(ctx)
                 (ctx as? Activity)?.finishAffinity()
                 android.os.Process.killProcess(android.os.Process.myPid())
-            }) { Text("Change backend connection", color = Color.Gray) }
+            }) { Text("Change backend connection", color = TextSecondary) }
         }
     }
 }
@@ -316,12 +330,14 @@ fun RegisterScreen(existingUser: FirebaseUser?, onCancel: (() -> Unit)? = null) 
             OutlinedTextField(phone, { phone = it }, label = { Text("Mobile number") }, modifier = Modifier.fillMaxWidth(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone))
             Picker("Department", department, DEPARTMENTS) { department = it }
-            Picker("I am a", role.label, listOf(Role.HOD, Role.DRIVER, Role.GM, Role.OM).map { it.label }) { l ->
+            Picker("I am a", role.label, listOf(Role.HOD, Role.DRIVER, Role.GM, Role.OM, Role.ADMIN).map { it.label }) { l ->
                 role = Role.entries.first { it.label == l }
+                if (role == Role.ADMIN) admin = true
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Checkbox(admin, { admin = it })
-                Text("First-time setup: make me the system administrator (only works for the very first account)", fontSize = 13.sp)
+                Text("First-time setup: make me the system administrator (only works for the very first account)",
+                    style = MaterialTheme.typography.bodySmall, color = TextSecondary)
             }
             if (msg.isNotBlank()) Text(msg, color = DangerRed)
             Button(

@@ -1,6 +1,5 @@
 <resources>
     <style name="Theme.VanTracker" parent="android:Theme.Material.Light.NoActionBar">
-        <item name="android:statusBarColor">#7A3E12</item>
-        <item name="android:windowBackground">@android:color/white</item>
+        <item name="android:windowBackground">@color/window_bg</item>
     </style>
 </resources>
