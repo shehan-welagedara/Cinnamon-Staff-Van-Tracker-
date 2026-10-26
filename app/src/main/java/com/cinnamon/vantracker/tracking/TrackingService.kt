@@ -2,6 +2,8 @@ package com.cinnamon.vantracker.tracking
 
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothManager
+import android.bluetooth.BluetoothProfile
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -36,14 +38,19 @@ import kotlinx.coroutines.launch
 import kotlin.math.max
 
 /**
- * Always-on service for the dedicated van phone.
+ * Tracking service on driver phones.
  *
- *  GUARD        – no trip running. Watches for movement; the van charger (ignition) or the
- *                 van's Bluetooth connecting raises GPS precision. Movement without a trip
- *                 automatically opens an UNAUTHORIZED recording and asks the driver why.
+ *  GUARD        – no trip running. Watches for movement without a trip and then opens an
+ *                 UNAUTHORIZED recording and asks the driver why.
  *  TRIP         – an approved/scheduled trip is being recorded.
  *  UNAUTHORIZED – recording a movement nobody approved; ends by itself once the van is
- *                 parked again.
+ *                 parked again (or the driver's phone leaves the van).
+ *
+ * Two kinds of phone:
+ *  - Driver's own phone (default): runs only while the driver is on duty. Outside a trip the
+ *    location is read only while the phone is connected to the van's Bluetooth – so the
+ *    driver is never tracked at home or on the way to work.
+ *  - Dedicated van phone: always guarding; the charger (ignition) also counts as a trigger.
  */
 class TrackingService : LifecycleService() {
 
@@ -90,10 +97,16 @@ class TrackingService : LifecycleService() {
     private var lastFlush = 0L
     private var lastDeadlineCheck = 0L
     private var lastLoc: Location? = null
-    private val seenReadyTrips = mutableSetOf<String>()
-    private var readyTripsPrimed = false
+    private val seenOpenTrips = mutableSetOf<String>()
+    private var openTripsPrimed = false
+    private var myUid = ""
+    /** Another driver is on a trip with the van – this phone must not flag movement. */
+    private var vanInUseByOther = false
 
-    private val triggerActive get() = (settings.usePowerTrigger && charging) || btConnected
+    private val personal get() = !DevicePrefs.isDedicated(this)
+    private val triggerActive get() = btConnected || (!personal && settings.usePowerTrigger && charging)
+    /** Outside a trip, a personal phone only reads GPS while it is in the van. */
+    private val locationWanted get() = state.mode != TrackMode.GUARD || !personal || btConnected
 
     // ------------------------------------------------------------------ lifecycle
 
@@ -163,14 +176,18 @@ class TrackingService : LifecycleService() {
         .setContentIntent(Notifier.openAppIntent(this))
         .setContentTitle(
             when (state.mode) {
-                TrackMode.GUARD -> "Van guard active"
+                TrackMode.GUARD -> if (personal) "On duty" else "Van guard active"
                 TrackMode.TRIP -> "Trip: ${state.tripTitle}"
                 TrackMode.UNAUTHORIZED -> "Unapproved movement – recording"
             }
         )
         .setContentText(
             when (state.mode) {
-                TrackMode.GUARD -> if (triggerActive) "Ignition/Bluetooth on – start an approved trip before driving" else "Watching for movement"
+                TrackMode.GUARD -> when {
+                    triggerActive -> "In the van – start an approved trip before driving"
+                    personal -> "Waiting for trips · location not recorded"
+                    else -> "Watching for movement"
+                }
                 else -> "${TripCalc.km(state.distanceM / 1000)} · ${TripCalc.durationMs(System.currentTimeMillis() - state.startTime)}"
             }
         )
@@ -188,35 +205,51 @@ class TrackingService : LifecycleService() {
         val uid = Backend.auth.currentUser?.uid ?: return
         lifecycleScope.launch {
             Repo.settingsFlow().collect {
+                val btChanged = it.btDeviceName != settings.btDeviceName
                 settings = it
+                if (btChanged) checkConnectedVanBluetooth()
                 if (state.anchorLat == null && it.hotelSet) {
                     state = state.copy(anchorLat = it.hotelLat, anchorLng = it.hotelLng); state.save(this@TrackingService)
                 }
                 applyLocationRequest()
             }
         }
+        myUid = uid
         lifecycleScope.launch {
             Repo.profileFlow(uid).collect { p ->
                 driverName = p?.name ?: ""
+                if (p != null) DevicePrefs.setOnDuty(this@TrackingService, p.onDuty)
                 if (p != null && (!p.isDriver || !p.active)) {
-                    // Account is no longer a driver: stop guarding this phone.
+                    // Account is no longer a driver: stop tracking on this phone.
+                    stopSelf()
+                } else if (p != null && personal && !p.onDuty && state.mode == TrackMode.GUARD) {
+                    // Off duty on a personal phone: no tracking at all.
                     stopSelf()
                 }
             }
         }
         lifecycleScope.launch {
-            // Instant notification to the driver when a trip is approved for the van.
+            // Instant alerts: new trips open to all drivers, or a trip assigned to this driver.
             Repo.openTripsFlow().collect { list ->
-                val ready = list.filter { it.status == TripStatus.READY }
-                if (readyTripsPrimed) {
-                    ready.filter { it.id !in seenReadyTrips }.forEach {
+                vanInUseByOther = list.any { it.status == TripStatus.IN_PROGRESS && it.driverUid != uid }
+                val relevant = list.filter {
+                    (it.status == TripStatus.READY && it.driverUid.isBlank()) ||
+                        (it.status == TripStatus.ASSIGNED && it.driverUid == uid)
+                }
+                val keys = relevant.associateBy { "${it.id}:${it.status}:${it.driverUid}" }
+                if (openTripsPrimed) {
+                    keys.filterKeys { it !in seenOpenTrips }.values.forEach {
+                        val assignedToMe = it.status == TripStatus.ASSIGNED
                         Notifier.show(
-                            this@TrackingService, it.id.hashCode(), Notifier.CH_REQUESTS,
-                            "New approved trip", "${it.title} at ${TripCalc.dateTime(it.plannedTime)}",
+                            this@TrackingService, it.id.hashCode(), Notifier.CH_ALERTS,
+                            if (assignedToMe) "Trip assigned to you" else "New trip request – tap to accept",
+                            "${it.title} · ${TripCalc.dateTime(it.plannedTime)}" +
+                                if (it.stops.isNotEmpty()) "\n" + it.stops.joinToString(" → ") { s -> s.name } else "",
                         )
                     }
                 }
-                seenReadyTrips.clear(); seenReadyTrips.addAll(ready.map { it.id }); readyTripsPrimed = true
+                seenOpenTrips.clear(); seenOpenTrips.addAll(keys.keys); openTripsPrimed = true
+                if (vanInUseByOther) movementHits = 0
             }
         }
     }
@@ -248,12 +281,14 @@ class TrackingService : LifecycleService() {
                     if (isVanDevice(i)) btConnected = i.action == BluetoothDevice.ACTION_ACL_CONNECTED
                 }
             }
-            if (triggerActive && state.mode == TrackMode.GUARD) {
+            if (triggerActive && state.mode == TrackMode.GUARD && !vanInUseByOther) {
                 Notifier.show(
-                    this@TrackingService, 1003, Notifier.CH_REQUESTS, "Van started",
+                    this@TrackingService, 1003, Notifier.CH_REQUESTS, "Connected to the van",
                     "Start an approved or scheduled trip in the app before driving. Movement without a trip is reported to management.",
                 )
             }
+            // A personal phone leaving the van ends an unapproved recording: the driver got out.
+            if (personal && !btConnected && state.mode == TrackMode.UNAUTHORIZED) finishRecording(manual = false)
             applyLocationRequest(); publish(); refreshNotification()
         }
     }
@@ -267,6 +302,32 @@ class TrackingService : LifecycleService() {
         else @Suppress("DEPRECATION") i.getParcelableExtra<BluetoothDevice>(BluetoothDevice.EXTRA_DEVICE)
         val name = runCatching { device?.name }.getOrNull() ?: return false
         return name.contains(wanted, ignoreCase = true)
+    }
+
+    /** The phone may already be connected to the van when tracking starts – ask the audio profiles. */
+    @SuppressLint("MissingPermission")
+    private fun checkConnectedVanBluetooth() {
+        val wanted = settings.btDeviceName.trim()
+        if (wanted.isEmpty()) return
+        val adapter = getSystemService(BluetoothManager::class.java)?.adapter ?: return
+        listOf(BluetoothProfile.A2DP, BluetoothProfile.HEADSET).forEach { profile ->
+            runCatching {
+                adapter.getProfileProxy(this, object : BluetoothProfile.ServiceListener {
+                    override fun onServiceConnected(p: Int, proxy: BluetoothProfile) {
+                        val hit = runCatching {
+                            proxy.connectedDevices.any { it.name?.contains(wanted, ignoreCase = true) == true }
+                        }.getOrDefault(false)
+                        if (hit && !btConnected) {
+                            btConnected = true
+                            applyLocationRequest(); publish(); refreshNotification()
+                        }
+                        runCatching { adapter.closeProfileProxy(p, proxy) }
+                    }
+
+                    override fun onServiceDisconnected(p: Int) {}
+                }, profile)
+            }
+        }
     }
 
     private fun readInitialTriggers() {
@@ -295,6 +356,13 @@ class TrackingService : LifecycleService() {
     @SuppressLint("MissingPermission")
     private fun applyLocationRequest() {
         if (!::fused.isInitialized) return
+        if (!locationWanted) {
+            if (currentPriority != -2) {
+                runCatching { fused.removeLocationUpdates(locationCallback) }
+                currentPriority = -2; currentInterval = -2
+            }
+            return
+        }
         val (priority, interval) = when {
             state.mode != TrackMode.GUARD -> Priority.PRIORITY_HIGH_ACCURACY to 5_000L
             triggerActive -> Priority.PRIORITY_HIGH_ACCURACY to 10_000L
@@ -325,6 +393,13 @@ class TrackingService : LifecycleService() {
 
     private fun guard(loc: Location, speedKmh: Double) {
         if (loc.accuracy > max(settings.minGpsAccuracyM, 50.0)) return
+        if (vanInUseByOther) { movementHits = 0; return }
+        if (personal) {
+            // Phone is in the van (Bluetooth) – driving speed without a trip is unapproved.
+            movementHits = if (btConnected && speedKmh >= settings.movementSpeedKmh) movementHits + 1 else 0
+            if (movementHits >= 2) { movementHits = 0; startUnauthorized(loc) }
+            return
+        }
         if (state.anchorLat == null) {
             state = state.copy(anchorLat = loc.latitude, anchorLng = loc.longitude); state.save(this); return
         }
@@ -473,6 +548,8 @@ class TrackingService : LifecycleService() {
         val now = System.currentTimeMillis()
         val interval = if (state.mode == TrackMode.GUARD) 5 * 60_000 else 20_000
         if (!force && now - lastLiveWrite < interval) return
+        // Only the phone that is actually in the van may report the van's position.
+        if (state.mode == TrackMode.GUARD && (vanInUseByOther || (personal && !btConnected))) return
         val loc = lastLoc ?: return
         lastLiveWrite = now
         val bm = getSystemService(BatteryManager::class.java)
@@ -481,7 +558,7 @@ class TrackingService : LifecycleService() {
                 "lat" to loc.latitude, "lng" to loc.longitude,
                 "speedKmh" to TripCalc.round(if (loc.hasSpeed()) loc.speed * 3.6 else 0.0, 1),
                 "updatedAt" to now, "mode" to state.mode.name, "tripId" to state.tripId,
-                "tripTitle" to state.tripTitle, "driverName" to driverName,
+                "tripTitle" to state.tripTitle, "driverName" to driverName, "driverUid" to myUid,
                 "battery" to (bm?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: -1),
                 "charging" to charging,
             )

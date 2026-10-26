@@ -57,7 +57,7 @@ service cloud.firestore {
       allow create: if isManager() || isDriver();
       // HODs may only detach their own stop from a trip that has not started (cancel request).
       allow update: if isManager() || isDriver()
-        || (active() && resource.data.status == 'READY' && changed().hasOnly(['requestIds', 'stops', 'passengers', 'status']));
+        || (active() && resource.data.status in ['READY', 'ASSIGNED'] && changed().hasOnly(['requestIds', 'stops', 'passengers', 'status']));
       allow delete: if isAdmin();
 
       match /track/{chunk} {
@@ -75,6 +75,13 @@ service cloud.firestore {
       allow read: if active();
       allow create, update: if active();
       allow delete: if isAdmin();
+    }
+
+    // Driver on/off duty history.
+    match /dutyLogs/{id} {
+      allow read: if active();
+      allow create: if isDriver() && request.resource.data.driverUid == request.auth.uid;
+      allow update, delete: if isAdmin();
     }
 
     match /fuelLogs/{id} {

@@ -12,15 +12,31 @@ Every push to `main` builds a new APK and publishes it under **Releases** (`VanT
 
 | Mode | Who | What they can do |
 |---|---|---|
-| **Driver** | Dedicated van phone | Approved and scheduled trips list. Start a trip once passengers are on board and end it back at the hotel. Live map, distance, timer, stop check-off. Fuel fill-up log. Reasons for unapproved movement. |
+| **Driver** | Each driver, on their own phone | Go on or off duty. Get alerted about new trip requests and **accept** one (the first driver to accept gets it). **Start ride** once passengers are on board, then **Finish ride**. Release an accepted trip, start pre-approved scheduled runs, see who has the van. Live map, distance, timer, stop check-off. Fuel fill-up log. Reasons for unapproved movement. |
 | **Staff – HOD** | Heads of department | Request the van (purpose, stops on a map, time, passengers). Add a stop to a trip or daily run that is already going. Track the status of each request. Live van location. Department trip history. |
 | **Staff – GM / OM** | Approvers | Approve or reject requests, with a comment. Combine a request with an existing trip (the app suggests trips leaving around the same time). Live map. Alerts. Monthly reports with CSV export. Accept or flag reasons for unapproved movement. |
 | **Administrator** (role, or admin flag on any user) | | Fuel price, km/L, GPS correction %, hotel location and geofence, Bluetooth name, movement thresholds, reason deadline. Users and roles. Recurring pre-approved schedules. Fuel log (actual vs configured km/L). Share a setup code with other phones. |
 
-**How trips are tracked**
+**Trip flow (like PickMe / Uber)**
 
-- **No trip, no driving.** The van phone runs an always-on *van guard*. If the van moves without a started trip, the app records the route as an **unapproved movement**, alerts management right away, and asks the driver for a reason. Any movement still without a reason at the deadline hour (default 22:00) raises a **high-severity alert** for management.
-- **Charger and Bluetooth trigger.** When the phone's charger gets power (ignition on) or the phone connects to the van's Bluetooth, GPS switches to high precision and the driver is reminded to start a trip.
+1. An HOD requests the van.
+2. The GM or OM approves it. They can pick a driver, or leave it as **Any driver**.
+3. Every driver is alerted. The first to tap **Accept** gets the trip, and the HOD is told who's driving.
+4. With passengers on board, the driver taps **Start ride**. Back at the hotel, they tap **Finish ride**.
+
+Accepting needs internet, so two drivers can't take the same trip. Everything else works offline. Managers see a **Drivers** card: on trip, on duty, or off duty, with tap-to-call. Reports break down distance, hours and trips **by driver**.
+
+**How tracking works on drivers' own phones**
+
+- **Off duty:** no location is recorded at all.
+- **On duty, not on a ride:** the location is read only while the phone is connected to the **van's Bluetooth**, meaning the driver is in the van. It is never read at home or on the way to work.
+- **During a ride:** the full route is recorded with GPS.
+- **Only one driver at a time:** while one driver is on a ride, other drivers' phones never report the van's position or flag movement.
+
+**No trip, no driving.** If a driver's phone is in the van (on its Bluetooth) and the van drives off without a started ride, the app records it as an **unapproved movement**. Management is alerted right away and the driver is asked for a reason. Any movement still without a reason at the deadline hour (default 22:00) raises a **high-severity alert**.
+
+- **Van Bluetooth needed:** this needs the van's Bluetooth name set under Settings — the car stereo, or a cheap Bluetooth adapter on the van's 12V/USB socket. Each driver pairs their phone with it once.
+- **Dedicated van phone (optional):** under *Driver phone setup* you can mark a spare phone as a **dedicated van phone**. It then watches for movement all the time, and its charger counts as the ignition signal.
 - **Fuel cost** is calculated from GPS distance only:
   - km = GPS km × (1 + correction %)
   - litres = km ÷ km per litre
@@ -53,6 +69,10 @@ Every push to `main` builds a new APK and publishes it under **Releases** (`VanT
     - Battery optimisation ignored
 
     Keep the phone on the van charger.
+
+## Firestore rules
+
+When an update adds data, it may need new rules. Whenever `firestore.rules` changes in this repo, copy it again into **Firebase console → Firestore Database → Rules → Publish**. Version 1.0.6+ needs this for driver duty logs.
 
 ## Updating the app (keeps all data)
 

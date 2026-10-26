@@ -156,9 +156,15 @@ fun AdminSettingsScreen(s: Session) {
             OutlinedTextField(speed, { speed = it }, label = { Text("Movement speed threshold (km/h)") }, keyboardOptions = num, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(accuracy, { accuracy = it }, label = { Text("Ignore GPS fixes worse than (m)") }, keyboardOptions = num, modifier = Modifier.fillMaxWidth())
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Charger = ignition trigger", modifier = Modifier.weight(1f)); Switch(power, { power = it })
+                Text("Charger = ignition trigger (dedicated van phone only)", modifier = Modifier.weight(1f)); Switch(power, { power = it })
             }
-            OutlinedTextField(bt, { bt = it }, label = { Text("Van Bluetooth device name (blank = off)") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(bt, { bt = it }, label = { Text("Van Bluetooth device name") }, modifier = Modifier.fillMaxWidth())
+            Text(
+                "Drivers use their own phones: the app knows a driver is in the van when their phone is connected to this Bluetooth " +
+                    "(car stereo, or a small Bluetooth adapter on the van's USB/12V socket). Without it, movement without a trip " +
+                    "can't be detected – only approved and scheduled rides are recorded.",
+                fontSize = 13.sp, color = if (bt.isBlank()) WarnOrange else TextSecondary,
+            )
             OutlinedTextField(deadline, { deadline = it }, label = { Text("Reason deadline hour (0-23)") }, keyboardOptions = num, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(autoEnd, { autoEnd = it }, label = { Text("Auto-end recording after parked (min)") }, keyboardOptions = num, modifier = Modifier.fillMaxWidth())
 
@@ -444,6 +450,12 @@ fun ReportsScreen(s: Session) {
                 BreakdownCard("Cost by department", byDept, cur)
             }
             item { BreakdownCard("Distance by trip type (km)", trips.groupBy { it.type.label }.mapValues { e -> e.value.sumOf { it.distanceKm } }, "") }
+            item {
+                val byDriver = trips.groupBy { it.driverName.ifBlank { "Unknown" } }
+                BreakdownCard("Distance by driver (km)", byDriver.mapValues { e -> e.value.sumOf { it.distanceKm } }, "")
+                BreakdownCard("Hours on the road by driver", byDriver.mapValues { e -> e.value.sumOf { it.durationMin } / 60.0 }, "")
+                BreakdownCard("Trips by driver", byDriver.mapValues { e -> e.value.size.toDouble() }, "")
+            }
             item { SectionHeader("Trips") }
             items(trips, key = { it.id }) { t -> TripCard(t, s, onClick = { s.nav.go(Screen.TripDetail(t.id)) }) }
         }

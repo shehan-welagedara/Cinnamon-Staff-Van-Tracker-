@@ -155,10 +155,16 @@ fun AppRoot(openRequest: String, onOpenHandled: () -> Unit) {
                 else -> {
                     val nav = remember(p.uid) { Nav() }
                     val session = Session(p, settings, nav)
-                    LaunchedEffect(p.uid, p.role) {
+                    LaunchedEffect(p.uid, p.role, p.onDuty) {
                         WatchWorker.schedule(ctx)
                         DevicePrefs.setDriverPhone(ctx, p.isDriver)
-                        if (p.isDriver && DriverPermissions.allGranted(ctx)) TrackingService.start(ctx)
+                        if (p.isDriver) DevicePrefs.setOnDuty(ctx, p.onDuty)
+                        // Personal phones track only while on duty (or to finish a running trip).
+                        val recording = com.cinnamon.vantracker.tracking.TrackingState.load(ctx).mode !=
+                            com.cinnamon.vantracker.tracking.TrackMode.GUARD
+                        if (p.isDriver && DriverPermissions.allGranted(ctx) && (DevicePrefs.isDedicated(ctx) || p.onDuty || recording)) {
+                            TrackingService.start(ctx)
+                        }
                     }
                     LaunchedEffect(openRequest) {
                         if (openRequest.isNotBlank()) {

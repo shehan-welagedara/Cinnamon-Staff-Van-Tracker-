@@ -161,8 +161,51 @@ private fun LazyListScope.homeTab(s: Session, pendingCount: Int, openAlerts: Int
             ) { Text("$openAlerts alert(s)") }
         }
     }
+    item { DriversCard() }
     item { UpcomingTrips(s) }
     item { MyRecentRequests(s) }
+}
+
+/** Who can drive right now: on trip / on duty / off duty, with a tap-to-call number. */
+@Composable
+private fun DriversCard() {
+    val ctx = LocalContext.current
+    val drivers by remember { Repo.driversFlow() }.collectAsState(initial = emptyList())
+    val open by remember { Repo.openTripsFlow() }.collectAsState(initial = emptyList())
+    if (drivers.isEmpty()) return
+    SectionHeader("Drivers")
+    GroupCard {
+        drivers.forEachIndexed { i, d ->
+            val onTrip = open.firstOrNull { it.status == TripStatus.IN_PROGRESS && it.driverUid == d.uid }
+            val assigned = open.count { it.status == TripStatus.ASSIGNED && it.driverUid == d.uid }
+            val (status, color) = when {
+                onTrip != null -> "On trip" to OkGreen
+                d.onDuty -> "On duty" to InfoBlue
+                else -> "Off duty" to TextSecondary
+            }
+            Row(
+                Modifier.fillMaxWidth().clickable(enabled = d.phone.isNotBlank()) {
+                    runCatching { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_DIAL, android.net.Uri.parse("tel:${d.phone}"))) }
+                }.padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(d.name, style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        when {
+                            onTrip != null -> onTrip.title
+                            assigned > 0 -> "$assigned trip(s) accepted"
+                            d.dutyChangedAt > 0 -> (if (d.onDuty) "Since " else "Last on duty ") + TripCalc.dateTime(d.dutyChangedAt)
+                            else -> d.phone
+                        },
+                        color = TextSecondary, style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                Chip(status, color)
+            }
+            if (i < drivers.lastIndex) Box(Modifier.padding(start = 16.dp).fillMaxWidth().height(0.5.dp).background(Separator))
+        }
+    }
 }
 
 @Composable
@@ -171,7 +214,7 @@ private fun LiveVanCard(s: Session) {
     val l = live
     SectionCard("Van now", onClick = { s.nav.go(Screen.LiveMap) }) {
         if (l == null || l.updatedAt == 0L) {
-            Text("No position yet – the van phone has not reported.", color = TextSecondary)
+            Text("No position yet – shown once a driver is in the van or on a trip.", color = TextSecondary)
         } else {
             val (text, color) = when (l.mode) {
                 "TRIP" -> "On trip: ${l.tripTitle}" to OkGreen
@@ -200,7 +243,7 @@ private fun UpcomingTrips(s: Session) {
     if (open.isEmpty() && todays.isEmpty()) Empty("No trips planned.")
     open.forEach { t ->
         TripCard(t, s, onClick = { s.nav.go(Screen.TripDetail(t.id)) }) {
-            if (t.status == TripStatus.READY || t.status == TripStatus.IN_PROGRESS) {
+            if (t.isOpen || t.status == TripStatus.IN_PROGRESS) {
                 OutlinedButton(onClick = { s.nav.go(Screen.NewRequest("trip:${t.id}", t.title)) }) { Text("+ Add my stop to this trip") }
             }
         }
@@ -251,6 +294,10 @@ fun RequestCard(r: TripRequest, s: Session, actions: @Composable () -> Unit = {}
             "${r.status.label} by ${r.approverName}" + (if (r.decisionComment.isNotBlank()) ": “${r.decisionComment}”" else ""),
             fontSize = 13.sp, color = TextSecondary,
         )
+        when {
+            r.driverName.isNotBlank() -> InfoRow("Driver", r.driverName, OkGreen)
+            r.status == RequestStatus.APPROVED -> Text("Waiting for a driver to accept…", fontSize = 13.sp, color = WarnOrange)
+        }
         actions()
     }
 }
@@ -415,9 +462,14 @@ private fun ApprovalItem(s: Session, r: TripRequest) {
             OutlinedButton(onClick = { dialog = false }) { Text("Reject", color = DangerRed) }
         }
     }
+    val drivers by remember { Repo.driversFlow() }.collectAsState(initial = emptyList())
     val d = dialog ?: return
     var comment by remember(d) { mutableStateOf("") }
     var target by remember(d) { mutableStateOf(r.joinTarget.ifBlank { suggestion?.let { "trip:${it.id}" } ?: "" }) }
+    // "" = alert all drivers, first to accept; otherwise a driver uid.
+    var driverUid by remember(d) { mutableStateOf("") }
+    val anyDriver = "Any driver (first to accept)"
+    val driverOptions = listOf(anyDriver) + drivers.map { it.name + if (it.onDuty) " · on duty" else " · off duty" }
     AlertDialog(
         onDismissRequest = { dialog = null },
         title = { Text(if (d) "Approve request" else "Reject request") },
@@ -427,13 +479,22 @@ private fun ApprovalItem(s: Session, r: TripRequest) {
                 if (d) Picker("Assign to", options.firstOrNull { it.first == target }?.second ?: "New separate trip", options.map { it.second }) { l ->
                     target = options.first { it.second == l }.first
                 }
+                // Driver choice only applies to a new trip; combined trips keep their driver.
+                if (d && target.isBlank()) {
+                    val idx = drivers.indexOfFirst { it.uid == driverUid }
+                    Picker("Driver", if (idx >= 0) driverOptions[idx + 1] else anyDriver, driverOptions) { l ->
+                        val i = driverOptions.indexOf(l)
+                        driverUid = if (i <= 0) "" else drivers[i - 1].uid
+                    }
+                }
                 OutlinedTextField(comment, { comment = it }, label = { Text(if (d) "Comment (optional)" else "Reason for rejection") }, modifier = Modifier.fillMaxWidth())
             }
         },
         confirmButton = {
             Button(enabled = d || comment.isNotBlank(), onClick = {
                 val me = s.me
-                if (d) AppScope.launch { Repo.approveRequest(r, me, comment.trim(), target.ifBlank { null }, schedules) }
+                val driver = drivers.firstOrNull { it.uid == driverUid }.takeIf { target.isBlank() }
+                if (d) AppScope.launch { Repo.approveRequest(r, me, comment.trim(), target.ifBlank { null }, schedules, driver) }
                 else Repo.rejectRequest(r, me, comment.trim())
                 dialog = null
             }) { Text(if (d) "Approve" else "Reject") }

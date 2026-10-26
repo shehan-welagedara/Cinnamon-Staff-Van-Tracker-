@@ -11,7 +11,10 @@ import com.cinnamon.vantracker.data.AppSettings
 import com.cinnamon.vantracker.data.Backend
 import com.cinnamon.vantracker.data.RequestStatus
 import com.cinnamon.vantracker.data.Repo
+import com.cinnamon.vantracker.data.Trip
 import com.cinnamon.vantracker.data.TripRequest
+import com.cinnamon.vantracker.data.TripStatus
+import com.cinnamon.vantracker.tracking.TripCalc
 import com.cinnamon.vantracker.data.UserProfile
 import com.cinnamon.vantracker.tracking.DevicePrefs
 import kotlinx.coroutines.tasks.await
@@ -67,8 +70,26 @@ class WatchWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx,
                 }
             }
 
-            val decided = Repo.requests.whereEqualTo("requesterUid", uid).get().await()
-                .documents.map(TripRequest::from).filter { (it.decidedAt ?: 0) > last }
+            if (me.isDriver) {
+                // Drivers who are off duty / not in the app still hear about new trips.
+                val open = Repo.trips.whereIn("status", listOf(TripStatus.READY.name, TripStatus.ASSIGNED.name)).get().await()
+                    .documents.map(Trip::from)
+                open.filter { it.status == TripStatus.READY && it.driverUid.isBlank() && it.openedAt > last }.forEach {
+                    Notifier.show(ctx, it.id.hashCode(), Notifier.CH_ALERTS, "New trip request – tap to accept",
+                        "${it.title} · ${TripCalc.dateTime(it.plannedTime)}")
+                }
+                open.filter { it.status == TripStatus.ASSIGNED && it.driverUid == uid && (it.assignedAt ?: 0) > last }.forEach {
+                    Notifier.show(ctx, it.id.hashCode(), Notifier.CH_ALERTS, "Trip assigned to you",
+                        "${it.title} · ${TripCalc.dateTime(it.plannedTime)}")
+                }
+            }
+
+            val mine = Repo.requests.whereEqualTo("requesterUid", uid).get().await().documents.map(TripRequest::from)
+            mine.filter { (it.acceptedAt ?: 0) > last && it.driverName.isNotBlank() }.forEach {
+                Notifier.show(ctx, it.id.hashCode() + 1, Notifier.CH_REQUESTS, "Driver confirmed",
+                    "${it.driverName} will take your ${it.category} trip (${TripCalc.dateTime(it.requestedTime)}).", open = "requests")
+            }
+            val decided = mine.filter { (it.decidedAt ?: 0) > last }
             decided.forEach {
                 val verb = when (it.status) {
                     RequestStatus.APPROVED -> "approved"

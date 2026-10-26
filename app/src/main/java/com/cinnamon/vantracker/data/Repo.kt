@@ -32,6 +32,7 @@ object Repo {
     val schedules get() = db.collection("schedules")
     val alerts get() = db.collection("alerts")
     val fuelLogs get() = db.collection("fuelLogs")
+    val dutyLogs get() = db.collection("dutyLogs")
     val settingsDoc get() = db.collection("config").document("settings")
     val liveDoc get() = db.collection("vehicle").document("live")
     val bootstrapDoc get() = db.collection("meta").document("bootstrap")
@@ -81,8 +82,15 @@ object Repo {
     fun requestsForTripFlow(tripId: String) = queryFlow(requests.whereEqualTo("tripId", tripId))
         .map { s -> s?.documents?.map(TripRequest::from).orEmpty() }
 
-    fun openTripsFlow() = queryFlow(trips.whereIn("status", listOf(TripStatus.READY.name, TripStatus.IN_PROGRESS.name)))
-        .map { s -> s?.documents?.map(Trip::from).orEmpty().sortedBy { it.plannedTime } }
+    fun openTripsFlow() = queryFlow(
+        trips.whereIn("status", listOf(TripStatus.READY.name, TripStatus.ASSIGNED.name, TripStatus.IN_PROGRESS.name))
+    ).map { s -> s?.documents?.map(Trip::from).orEmpty().sortedBy { it.plannedTime } }
+
+    fun driversFlow() = queryFlow(users.whereEqualTo("role", Role.DRIVER.name))
+        .map { s -> s?.documents?.map(UserProfile::from).orEmpty().filter { it.active }.sortedBy { it.name } }
+
+    fun dutyLogsSinceFlow(from: Long) = queryFlow(dutyLogs.whereGreaterThanOrEqualTo("at", from))
+        .map { s -> s?.documents?.map(DutyLog::from).orEmpty().sortedBy { it.at } }
 
     fun tripsSinceFlow(from: Long) = queryFlow(trips.whereGreaterThanOrEqualTo("createdAt", from))
         .map { s -> s?.documents?.map(Trip::from).orEmpty().sortedByDescending { it.startTime ?: it.createdAt } }
@@ -126,6 +134,15 @@ object Repo {
         users.document(uid).update(fields)
     }
 
+    /** Driver goes on / off duty; every change is logged for reports. */
+    fun setDuty(driver: UserProfile, onDuty: Boolean) {
+        val t = now()
+        val batch = db.batch()
+        batch.update(users.document(driver.uid), mapOf("onDuty" to onDuty, "dutyChangedAt" to t))
+        batch.set(dutyLogs.document(), mapOf("driverUid" to driver.uid, "driverName" to driver.name, "onDuty" to onDuty, "at" to t))
+        batch.commit()
+    }
+
     // ------------------------------------------------------------------ requests
 
     fun submitRequest(r: TripRequest): String {
@@ -142,8 +159,15 @@ object Repo {
      * Approves [r]. [target] is null for a new dedicated trip, "trip:<id>" to combine with an
      * existing trip, or "sched:<scheduleId>:<yyyyMMdd>" to ride along a scheduled run.
      */
-    suspend fun approveRequest(r: TripRequest, approver: UserProfile, comment: String, target: String?, schedules: List<Schedule>) {
+    suspend fun approveRequest(
+        r: TripRequest, approver: UserProfile, comment: String, target: String?, schedules: List<Schedule>,
+        driver: UserProfile? = null,
+    ) {
         val stops = r.stops.map { it.copy(requestId = r.id, department = r.department) }
+        // Pre-assigned driver (optional) – otherwise every driver is alerted and the first to accept takes it.
+        val driverFields: Map<String, Any?> = if (driver != null) mapOf(
+            "status" to TripStatus.ASSIGNED.name, "driverUid" to driver.uid, "driverName" to driver.name, "assignedAt" to now(),
+        ) else emptyMap()
         val tripRef: DocumentReference
         val batch = db.batch()
         when {
@@ -175,8 +199,9 @@ object Repo {
                         "type" to TripType.SCHEDULED.name, "status" to TripStatus.READY.name,
                         "title" to sched.title, "category" to sched.category, "purpose" to sched.purpose,
                         "scheduleId" to sched.id, "plannedTime" to plannedTimeFor(sched, day),
-                        "createdAt" to now(), "createdBy" to approver.name,
+                        "createdAt" to now(), "openedAt" to now(), "createdBy" to approver.name,
                     )
+                    data += driverFields
                     // Keep the schedule's own stops ahead of the extra ones.
                     data["stops"] = FieldValue.arrayUnion(*(sched.stops + stops).map { it.toMap() }.toTypedArray())
                     data["departments"] = FieldValue.arrayUnion(*listOf(sched.department, r.department).filter { it.isNotBlank() }.toTypedArray())
@@ -192,8 +217,9 @@ object Repo {
                         "purpose" to r.purpose, "departments" to listOf(r.department),
                         "requestIds" to listOf(r.id), "stops" to stops.map { it.toMap() },
                         "plannedTime" to r.requestedTime, "passengers" to r.passengers,
-                        "createdAt" to now(), "createdBy" to approver.name,
-                    )
+                        "createdAt" to now(), "openedAt" to now(), "createdBy" to approver.name,
+                        "driverUid" to "", "driverName" to "",
+                    ) + driverFields
                 )
             }
         }
@@ -202,8 +228,54 @@ object Repo {
                 "status" to RequestStatus.APPROVED.name, "approverName" to approver.name,
                 "approverUid" to approver.uid, "decidedAt" to now(), "decisionComment" to comment,
                 "tripId" to tripRef.id,
+            ) + (if (driver != null && target == null) mapOf("driverName" to driver.name, "acceptedAt" to now()) else emptyMap())
+        )
+        batch.commit()
+    }
+
+    /**
+     * A driver accepts an open trip. Runs as a transaction so two drivers can never take the
+     * same trip (needs internet). Returns null on success or a message why it failed.
+     */
+    suspend fun acceptTrip(tripId: String, driver: UserProfile): String? = runCatching {
+        db.runTransaction { tx ->
+            val snap = tx.get(trips.document(tripId))
+            if (!snap.exists()) throw IllegalStateException("This trip no longer exists.")
+            val t = Trip.from(snap)
+            if (t.status != TripStatus.READY) {
+                throw IllegalStateException(
+                    if (t.driverName.isNotBlank() && t.driverUid != driver.uid) "Already accepted by ${t.driverName}."
+                    else "This trip is ${t.status.label.lowercase()}."
+                )
+            }
+            val at = now()
+            tx.update(
+                trips.document(tripId), mapOf(
+                    "status" to TripStatus.ASSIGNED.name, "driverUid" to driver.uid,
+                    "driverName" to driver.name, "assignedAt" to at,
+                )
+            )
+            t.requestIds.forEach { tx.update(requests.document(it), mapOf("driverName" to driver.name, "acceptedAt" to at)) }
+            true
+        }.await()
+        null as String?
+    }.getOrElse { e ->
+        if (e is com.google.firebase.firestore.FirebaseFirestoreException &&
+            e.code == com.google.firebase.firestore.FirebaseFirestoreException.Code.UNAVAILABLE
+        ) "No internet – accepting a trip needs a connection so two drivers don't take the same trip."
+        else e.cause?.message ?: e.message ?: "Could not accept the trip."
+    }
+
+    /** The assigned driver hands an unstarted trip back; all drivers are alerted again. */
+    fun releaseTrip(t: Trip) {
+        val batch = db.batch()
+        batch.update(
+            trips.document(t.id), mapOf(
+                "status" to TripStatus.READY.name, "driverUid" to "", "driverName" to "",
+                "assignedAt" to null, "openedAt" to now(),
             )
         )
+        t.requestIds.forEach { batch.update(requests.document(it), mapOf("driverName" to "", "acceptedAt" to null)) }
         batch.commit()
     }
 
@@ -222,7 +294,7 @@ object Repo {
         batch.update(requests.document(r.id), mapOf("status" to RequestStatus.CANCELLED.name, "decidedAt" to now()))
         if (r.tripId.isNotBlank()) {
             val trip = runCatching { trips.document(r.tripId).get().await() }.getOrNull()?.takeIf { it.exists() }?.let(Trip::from)
-            if (trip != null && trip.status == TripStatus.READY) {
+            if (trip != null && trip.isOpen) {
                 val remaining = trip.requestIds - r.id
                 if (remaining.isEmpty() && trip.type == TripType.REQUEST) {
                     batch.update(trips.document(trip.id), "status", TripStatus.CANCELLED.name)

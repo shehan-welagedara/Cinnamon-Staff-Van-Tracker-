@@ -40,6 +40,9 @@ data class UserProfile(
     val requestedRole: Role = Role.HOD,
     val isAdmin: Boolean = false,
     val active: Boolean = true,
+    /** Drivers only: available to take trips. Location is recorded only while on duty. */
+    val onDuty: Boolean = false,
+    val dutyChangedAt: Long = 0,
 ) {
     /** GM, OM and Administrators can approve trips. */
     val isManager get() = role == Role.GM || role == Role.OM || role == Role.ADMIN
@@ -63,7 +66,16 @@ data class UserProfile(
             requestedRole = Role.of(d.getString("requestedRole")),
             isAdmin = (d.getBoolean("isAdmin") ?: false) || Role.of(d.getString("role")) == Role.ADMIN,
             active = d.getBoolean("active") ?: true,
+            onDuty = d.getBoolean("onDuty") ?: false,
+            dutyChangedAt = d.long("dutyChangedAt"),
         )
+    }
+}
+
+/** On/off duty history of drivers (collection dutyLogs) – for reports and the web dashboard. */
+data class DutyLog(val id: String = "", val driverUid: String = "", val driverName: String = "", val onDuty: Boolean = false, val at: Long = 0) {
+    companion object {
+        fun from(d: DocumentSnapshot) = DutyLog(d.id, d.str("driverUid"), d.str("driverName"), d.getBoolean("onDuty") ?: false, d.long("at"))
     }
 }
 
@@ -125,6 +137,9 @@ data class TripRequest(
     val decisionComment: String = "",
     val tripId: String = "",
     val createdAt: Long = 0,
+    /** Driver who accepted (or was assigned) the trip carrying this request. */
+    val driverName: String = "",
+    val acceptedAt: Long? = null,
 ) {
     fun toMap(): Map<String, Any?> = mapOf(
         "requesterUid" to requesterUid, "requesterName" to requesterName, "department" to department,
@@ -155,6 +170,8 @@ data class TripRequest(
             decisionComment = d.str("decisionComment"),
             tripId = d.str("tripId"),
             createdAt = d.long("createdAt"),
+            driverName = d.str("driverName"),
+            acceptedAt = d.getLong("acceptedAt"),
         )
     }
 }
@@ -168,7 +185,11 @@ enum class TripType(val label: String) {
 }
 
 enum class TripStatus(val label: String) {
-    READY("Ready to start"), IN_PROGRESS("In progress"), COMPLETED("Completed"), CANCELLED("Cancelled");
+    /** Approved, waiting for a driver to accept. */
+    READY("Waiting for driver"),
+    /** A driver accepted / was assigned; ride not started yet. */
+    ASSIGNED("Driver assigned"),
+    IN_PROGRESS("On the road"), COMPLETED("Completed"), CANCELLED("Cancelled");
 
     companion object {
         fun of(s: String?) = entries.firstOrNull { it.name == s } ?: READY
@@ -209,8 +230,12 @@ data class Trip(
     val reviewStatus: String = "",
     val reviewedBy: String = "",
     val createdAt: Long = 0,
+    /** When the trip became open for drivers (approval, or a driver releasing it). */
+    val openedAt: Long = 0,
+    val assignedAt: Long? = null,
 ) {
     val isActive get() = status == TripStatus.IN_PROGRESS
+    val isOpen get() = status == TripStatus.READY || status == TripStatus.ASSIGNED
 
     companion object {
         fun from(d: DocumentSnapshot) = Trip(
@@ -228,6 +253,8 @@ data class Trip(
             passengers = d.long("passengers").toInt(),
             driverUid = d.str("driverUid"),
             driverName = d.str("driverName"),
+            openedAt = d.long("openedAt").takeIf { it > 0 } ?: d.long("createdAt"),
+            assignedAt = d.getLong("assignedAt"),
             startTime = d.getLong("startTime"),
             endTime = d.getLong("endTime"),
             distanceKm = d.dbl("distanceKm"),
@@ -402,6 +429,7 @@ data class LiveStatus(
     val tripId: String = "",
     val tripTitle: String = "",
     val driverName: String = "",
+    val driverUid: String = "",
     val battery: Int = -1,
     val charging: Boolean = false,
 ) {
@@ -412,6 +440,7 @@ data class LiveStatus(
                 lat = d.dbl("lat"), lng = d.dbl("lng"), speedKmh = d.dbl("speedKmh"),
                 updatedAt = d.long("updatedAt"), mode = d.getString("mode") ?: "OFFLINE",
                 tripId = d.str("tripId"), tripTitle = d.str("tripTitle"), driverName = d.str("driverName"),
+                driverUid = d.str("driverUid"),
                 battery = d.getLong("battery")?.toInt() ?: -1, charging = d.getBoolean("charging") ?: false,
             )
         }
