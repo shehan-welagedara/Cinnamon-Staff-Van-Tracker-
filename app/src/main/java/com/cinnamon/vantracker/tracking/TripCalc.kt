@@ -1,6 +1,7 @@
 package com.cinnamon.vantracker.tracking
 
 import com.cinnamon.vantracker.data.AppSettings
+import com.cinnamon.vantracker.data.Vehicle
 import java.text.DecimalFormat
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -25,14 +26,26 @@ object TripCalc {
     /**
      * Fuel is derived purely from GPS distance:
      *   km      = gpsKm × (1 + correction%)
-     *   litres  = km ÷ km-per-litre
-     *   cost    = litres × price-per-litre
+     *   litres  = km ÷ the vehicle's km-per-litre
+     *   cost    = litres × price-per-litre of the vehicle's fuel (diesel / petrol)
      */
-    fun fuel(gpsKm: Double, s: AppSettings): Triple<Double, Double, Double> {
+    fun fuel(gpsKm: Double, s: AppSettings, v: Vehicle? = null): Triple<Double, Double, Double> {
         val km = gpsKm * (1 + s.distanceCorrectionPct / 100.0)
-        val liters = if (s.kmPerLiter > 0) km / s.kmPerLiter else 0.0
-        val cost = liters * s.fuelPricePerLiter
+        val kmpl = kmPerLiter(s, v)
+        val liters = if (kmpl > 0) km / kmpl else 0.0
+        val cost = liters * s.priceFor(v?.fuelType ?: "Diesel")
         return Triple(round(km, 2), round(liters, 2), round(cost, 2))
+    }
+
+    fun kmPerLiter(s: AppSettings, v: Vehicle?) = v?.kmPerLiter?.takeIf { it > 0 } ?: s.kmPerLiter
+
+    /** Compass bearing (degrees clockwise from north) from point 1 to point 2. */
+    fun bearing(lat1: Double, lng1: Double, lat2: Double, lng2: Double): Float {
+        val p1 = Math.toRadians(lat1); val p2 = Math.toRadians(lat2)
+        val dl = Math.toRadians(lng2 - lng1)
+        val y = sin(dl) * cos(p2)
+        val x = cos(p1) * sin(p2) - sin(p1) * cos(p2) * cos(dl)
+        return ((Math.toDegrees(atan2(y, x)) + 360) % 360).toFloat()
     }
 
     fun round(v: Double, d: Int): Double {

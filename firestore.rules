@@ -38,6 +38,19 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // Fleet, managed by administrators.
+    match /vehicles/{id} {
+      allow read: if active();
+      allow write: if isAdmin();
+    }
+
+    // Live position per vehicle, written by the driver on the ride.
+    match /live/{vehicleId} {
+      allow read: if active();
+      allow write: if isDriver() || isAdmin();
+    }
+
+    // Old single-van live document (before multi-vehicle support).
     match /vehicle/{doc} {
       allow read: if active();
       allow write: if isDriver() || isAdmin();

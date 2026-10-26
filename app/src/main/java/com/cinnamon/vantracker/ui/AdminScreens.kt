@@ -90,10 +90,9 @@ fun AdminSettingsScreen(s: Session) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val cur = s.settings
-    var vehicle by remember { mutableStateOf(cur.vehicleName) }
-    var plate by remember { mutableStateOf(cur.plateNo) }
     var currency by remember { mutableStateOf(cur.currency) }
     var price by remember { mutableStateOf(cur.fuelPricePerLiter.toString()) }
+    var petrol by remember { mutableStateOf(cur.petrolPricePerLiter.toString()) }
     var kmpl by remember { mutableStateOf(cur.kmPerLiter.toString()) }
     var correction by remember { mutableStateOf(cur.distanceCorrectionPct.toString()) }
     var hotel by remember { mutableStateOf(cur.hotelName) }
@@ -103,7 +102,6 @@ fun AdminSettingsScreen(s: Session) {
     var speed by remember { mutableStateOf(cur.movementSpeedKmh.toInt().toString()) }
     var accuracy by remember { mutableStateOf(cur.minGpsAccuracyM.toInt().toString()) }
     var power by remember { mutableStateOf(cur.usePowerTrigger) }
-    var bt by remember { mutableStateOf(cur.btDeviceName) }
     var deadline by remember { mutableStateOf(cur.reasonDeadlineHour.toString()) }
     var autoEnd by remember { mutableStateOf(cur.autoEndUnauthorizedMin.toString()) }
     var msg by remember { mutableStateOf("") }
@@ -124,13 +122,13 @@ fun AdminSettingsScreen(s: Session) {
     val num = KeyboardOptions(keyboardType = KeyboardType.Decimal)
     Scaffold(topBar = { AppBar("Settings", onBack = { s.nav.back() }) }) { pad ->
         Column(Modifier.padding(pad).padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            SectionHeader("Vehicle")
-            OutlinedTextField(vehicle, { vehicle = it }, label = { Text("Vehicle name") }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(plate, { plate = it }, label = { Text("Registration no.") }, modifier = Modifier.fillMaxWidth())
+            SectionHeader("Vehicles")
+            OutlinedButton(onClick = { s.nav.go(Screen.Vehicles) }, modifier = Modifier.fillMaxWidth()) { Text("Manage vehicles (name, plate, fuel, km/L)") }
 
             SectionHeader("Fuel cost (from GPS distance)")
             OutlinedTextField(price, { price = it }, label = { Text("Diesel price per litre") }, keyboardOptions = num, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(kmpl, { kmpl = it }, label = { Text("Van efficiency (km per litre)") }, keyboardOptions = num, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(petrol, { petrol = it }, label = { Text("Petrol price per litre") }, keyboardOptions = num, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(kmpl, { kmpl = it }, label = { Text("Default km per litre (vehicles without their own)") }, keyboardOptions = num, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(correction, { correction = it }, label = { Text("GPS distance correction % (e.g. 3 or -2)") }, keyboardOptions = num, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(currency, { currency = it }, label = { Text("Currency") }, modifier = Modifier.fillMaxWidth())
             val example = TripCalc.fuel(10.0, AppSettings(fuelPricePerLiter = price.toDoubleOrNull() ?: 0.0, kmPerLiter = kmpl.toDoubleOrNull() ?: 0.0,
@@ -152,34 +150,33 @@ fun AdminSettingsScreen(s: Session) {
             }
             OutlinedTextField(radius, { radius = it }, label = { Text("Hotel geofence radius (m)") }, keyboardOptions = num, modifier = Modifier.fillMaxWidth())
 
-            SectionHeader("Unapproved movement detection")
+            SectionHeader("Dedicated vehicle phones (optional)")
+            Text(
+                "Drivers' own phones record only rides they start. To also catch driving without an approved ride, " +
+                    "keep a spare phone in a vehicle on its charger and mark it as a dedicated vehicle phone in Driver phone setup.",
+                fontSize = 13.sp, color = TextSecondary,
+            )
             OutlinedTextField(speed, { speed = it }, label = { Text("Movement speed threshold (km/h)") }, keyboardOptions = num, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(accuracy, { accuracy = it }, label = { Text("Ignore GPS fixes worse than (m)") }, keyboardOptions = num, modifier = Modifier.fillMaxWidth())
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Charger = ignition trigger (dedicated van phone only)", modifier = Modifier.weight(1f)); Switch(power, { power = it })
+                Text("Charger = ignition signal", modifier = Modifier.weight(1f)); Switch(power, { power = it })
             }
-            OutlinedTextField(bt, { bt = it }, label = { Text("Van Bluetooth device name") }, modifier = Modifier.fillMaxWidth())
-            Text(
-                "Drivers use their own phones: the app knows a driver is in the van when their phone is connected to this Bluetooth " +
-                    "(car stereo, or a small Bluetooth adapter on the van's USB/12V socket). Without it, movement without a trip " +
-                    "can't be detected – only approved and scheduled rides are recorded.",
-                fontSize = 13.sp, color = if (bt.isBlank()) WarnOrange else TextSecondary,
-            )
             OutlinedTextField(deadline, { deadline = it }, label = { Text("Reason deadline hour (0-23)") }, keyboardOptions = num, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(autoEnd, { autoEnd = it }, label = { Text("Auto-end recording after parked (min)") }, keyboardOptions = num, modifier = Modifier.fillMaxWidth())
 
             if (msg.isNotBlank()) Text(msg, color = if (msg.startsWith("Saved")) OkGreen else DangerRed)
             Button(modifier = Modifier.fillMaxWidth().height(50.dp), onClick = {
                 val ns = AppSettings(
-                    vehicleName = vehicle.trim().ifBlank { "Staff Van" }, plateNo = plate.trim(), currency = currency.trim().ifBlank { "LKR" },
+                    vehicleName = cur.vehicleName, plateNo = cur.plateNo, currency = currency.trim().ifBlank { "LKR" },
                     fuelPricePerLiter = price.toDoubleOrNull() ?: cur.fuelPricePerLiter,
+                    petrolPricePerLiter = petrol.toDoubleOrNull() ?: cur.petrolPricePerLiter,
                     kmPerLiter = kmpl.toDoubleOrNull()?.takeIf { it > 0 } ?: cur.kmPerLiter,
                     distanceCorrectionPct = correction.toDoubleOrNull() ?: 0.0,
                     hotelName = hotel.trim(), hotelLat = lat.toDoubleOrNull() ?: 0.0, hotelLng = lng.toDoubleOrNull() ?: 0.0,
                     geofenceRadiusM = radius.toDoubleOrNull() ?: cur.geofenceRadiusM,
                     movementSpeedKmh = speed.toDoubleOrNull() ?: cur.movementSpeedKmh,
                     minGpsAccuracyM = accuracy.toDoubleOrNull() ?: cur.minGpsAccuracyM,
-                    usePowerTrigger = power, btDeviceName = bt.trim(),
+                    usePowerTrigger = power,
                     reasonDeadlineHour = (deadline.toIntOrNull() ?: cur.reasonDeadlineHour).coerceIn(0, 23),
                     autoEndUnauthorizedMin = (autoEnd.toIntOrNull() ?: cur.autoEndUnauthorizedMin).coerceIn(1, 120),
                 )
@@ -451,6 +448,9 @@ fun ReportsScreen(s: Session) {
             }
             item { BreakdownCard("Distance by trip type (km)", trips.groupBy { it.type.label }.mapValues { e -> e.value.sumOf { it.distanceKm } }, "") }
             item {
+                val byVehicle = trips.groupBy { it.vehicleName.ifBlank { s.settings.vehicleName } }
+                BreakdownCard("Distance by vehicle (km)", byVehicle.mapValues { e -> e.value.sumOf { it.distanceKm } }, "")
+                BreakdownCard("Fuel cost by vehicle", byVehicle.mapValues { e -> e.value.sumOf { it.fuelCost } }, cur)
                 val byDriver = trips.groupBy { it.driverName.ifBlank { "Unknown" } }
                 BreakdownCard("Distance by driver (km)", byDriver.mapValues { e -> e.value.sumOf { it.distanceKm } }, "")
                 BreakdownCard("Hours on the road by driver", byDriver.mapValues { e -> e.value.sumOf { it.durationMin } / 60.0 }, "")
@@ -481,12 +481,12 @@ private fun BreakdownCard(title: String, data: Map<String, Double>, currency: St
 
 private fun exportCsv(ctx: Context, trips: List<Trip>, currency: String, month: Long) {
     fun q(v: String) = "\"" + v.replace("\"", "\"\"") + "\""
-    val sb = StringBuilder("Date,Start,End,Type,Title,Purpose/Reason,Departments,Stops,Driver,Distance km,Duration min,Moving min,Stopped min,Fuel L,Fuel cost ($currency),Requests\n")
+    val sb = StringBuilder("Date,Start,End,Type,Title,Purpose/Reason,Departments,Stops,Driver,Vehicle,Distance km,Duration min,Moving min,Stopped min,Fuel L,Fuel cost ($currency),Requests\n")
     trips.sortedBy { it.startTime ?: 0 }.forEach { t ->
         sb.append(listOf(
             TripCalc.date(t.startTime ?: t.createdAt), t.startTime?.let { TripCalc.time(it) } ?: "", t.endTime?.let { TripCalc.time(it) } ?: "",
             t.type.name, q(t.title), q(t.purpose.ifBlank { t.reason }), q(t.departments.joinToString("; ")),
-            q(t.stops.joinToString(" > ") { it.name }), q(t.driverName), t.distanceKm.toString(), t.durationMin.toString(),
+            q(t.stops.joinToString(" > ") { it.name }), q(t.driverName), q(t.vehicleName), t.distanceKm.toString(), t.durationMin.toString(),
             t.movingMin.toString(), t.stoppedMin.toString(), t.fuelLiters.toString(), t.fuelCost.toString(), t.requestIds.size.toString(),
         ).joinToString(",")).append('\n')
     }

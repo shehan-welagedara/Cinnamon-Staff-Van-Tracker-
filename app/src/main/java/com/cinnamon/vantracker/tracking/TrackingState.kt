@@ -16,6 +16,8 @@ data class TrackingState(
     val mode: TrackMode = TrackMode.GUARD,
     val tripId: String = "",
     val tripTitle: String = "",
+    val vehicleId: String = "",
+    val vehicleName: String = "",
     val requestIds: List<String> = emptyList(),
     val startTime: Long = 0,
     val distanceM: Double = 0.0,
@@ -36,7 +38,7 @@ data class TrackingState(
         val arr = JSONArray()
         pending.forEach { arr.put(JSONObject().put("a", it.lat).put("o", it.lng).put("t", it.time).put("s", it.speedKmh)) }
         val j = JSONObject()
-            .put("mode", mode.name).put("tripId", tripId).put("tripTitle", tripTitle)
+            .put("mode", mode.name).put("tripId", tripId).put("tripTitle", tripTitle).put("vehicleId", vehicleId).put("vehicleName", vehicleName)
             .put("requestIds", JSONArray(requestIds)).put("startTime", startTime)
             .put("distanceM", distanceM).put("movingMs", movingMs).put("stoppedMs", stoppedMs)
             .put("maxSpeedKmh", maxSpeedKmh).put("lastFixTime", lastFixTime).put("chunkSeq", chunkSeq)
@@ -59,6 +61,8 @@ data class TrackingState(
                 mode = TrackMode.valueOf(j.optString("mode", "GUARD")),
                 tripId = j.optString("tripId"),
                 tripTitle = j.optString("tripTitle"),
+                vehicleId = j.optString("vehicleId"),
+                vehicleName = j.optString("vehicleName"),
                 requestIds = (0 until ids.length()).map { ids.getString(it) },
                 startTime = j.optLong("startTime"),
                 distanceM = j.optDouble("distanceM", 0.0),

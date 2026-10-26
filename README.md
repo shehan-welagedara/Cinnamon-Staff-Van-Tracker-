@@ -15,7 +15,7 @@ Every push to `main` builds a new APK and publishes it under **Releases** (`VanT
 | **Driver** | Each driver, on their own phone | Go on or off duty. Get alerted about new trip requests and **accept** one (the first driver to accept gets it). **Start ride** once passengers are on board, then **Finish ride**. Release an accepted trip, start pre-approved scheduled runs, see who has the van. Live map, distance, timer, stop check-off. Fuel fill-up log. Reasons for unapproved movement. |
 | **Staff – HOD** | Heads of department | Request the van (purpose, stops on a map, time, passengers). Add a stop to a trip or daily run that is already going. Track the status of each request. Live van location. Department trip history. |
 | **Staff – GM / OM** | Approvers | Approve or reject requests, with a comment. Combine a request with an existing trip (the app suggests trips leaving around the same time). Live map. Alerts. Monthly reports with CSV export. Accept or flag reasons for unapproved movement. |
-| **Administrator** (role, or admin flag on any user) | | Fuel price, km/L, GPS correction %, hotel location and geofence, Bluetooth name, movement thresholds, reason deadline. Users and roles. Recurring pre-approved schedules. Fuel log (actual vs configured km/L). Share a setup code with other phones. |
+| **Administrator** (role, or admin flag on any user) | | Vehicles (any number: name, plate, type, seats, fuel, km/L). Diesel and petrol prices, GPS correction %, hotel location and geofence, movement thresholds, reason deadline. Users and roles. Recurring pre-approved schedules. Fuel log (actual vs configured km/L). Share a setup code with other phones. |
 
 **Trip flow (like PickMe / Uber)**
 
@@ -26,17 +26,25 @@ Every push to `main` builds a new APK and publishes it under **Releases** (`VanT
 
 Accepting needs internet, so two drivers can't take the same trip. Everything else works offline. Managers see a **Drivers** card: on trip, on duty, or off duty, with tap-to-call. Reports break down distance, hours and trips **by driver**.
 
+**Several vehicles and drivers**
+
+- **Vehicles:** the administrator adds each vehicle once under **More → Vehicles**: name, registration, type, seats, fuel (diesel or petrol) and km/L. Any number of vehicles and drivers can be added later.
+- **Choosing the vehicle:** the driver picks it when starting a ride; vehicles already out are greyed out. A manager may also pre-assign one when approving.
+- **Fuel cost** uses that vehicle's km/L and the diesel or petrol price.
+- **Live map:** every vehicle appears as a car icon that turns with the direction of travel, like Uber or PickMe.
+- **Reports** break down distance, fuel cost, hours and trips by vehicle and by driver.
+
 **How tracking works on drivers' own phones**
 
-- **Off duty:** no location is recorded at all.
-- **On duty, not on a ride:** the location is read only while the phone is connected to the **van's Bluetooth**, meaning the driver is in the van. It is never read at home or on the way to work.
-- **During a ride:** the full route is recorded with GPS.
-- **Only one driver at a time:** while one driver is on a ride, other drivers' phones never report the van's position or flag movement.
+- **Off duty:** nothing is recorded.
+- **On duty:** the phone only listens for trip alerts. Location is not recorded.
+- **During a ride:** the full route is recorded with GPS, from **Start ride** to **Finish ride**.
 
-**No trip, no driving.** If a driver's phone is in the van (on its Bluetooth) and the van drives off without a started ride, the app records it as an **unapproved movement**. Management is alerted right away and the driver is asked for a reason. Any movement still without a reason at the deadline hour (default 22:00) raises a **high-severity alert**.
+**Optional: catching driving without a ride.** Drivers' phones only record rides they start. To also flag a vehicle driven without an approved ride, keep a spare phone in that vehicle on its charger and mark it as a **dedicated vehicle phone** in *Driver phone setup*. The charger counts as the ignition signal.
 
-- **Van Bluetooth needed:** this needs the van's Bluetooth name set under Settings — the car stereo, or a cheap Bluetooth adapter on the van's 12V/USB socket. Each driver pairs their phone with it once.
-- **Dedicated van phone (optional):** under *Driver phone setup* you can mark a spare phone as a **dedicated van phone**. It then watches for movement all the time, and its charger counts as the ignition signal.
+- **When it flags something:** the dedicated phone watches for movement all the time. A drive without a ride is recorded as an **unapproved movement**, management is alerted, and the driver is asked for a reason.
+- **Reason deadline:** any movement still without a reason at the deadline hour (default 22:00) raises a **high-severity alert**.
+
 - **Fuel cost** is calculated from GPS distance only:
   - km = GPS km × (1 + correction %)
   - litres = km ÷ km per litre
@@ -57,22 +65,18 @@ Accepting needs internet, so two drivers can't take the same trip. Everything el
 5. **Project settings → Your apps → Android:** use the package name `com.cinnamon.vantracker` → **Register** → download **google-services.json**.
 6. Install the APK on the administrator's phone. Open it, paste the whole content of `google-services.json`, and tap **Connect**.
 7. **Create an account.** Tick *"make me the system administrator"*. This only works for the very first account.
-8. **More → Van, fuel & tracking settings:**
-   - Set the hotel location and the diesel price and km/L.
-   - Set the van's Bluetooth name (optional).
-9. **More → Share setup code.** Send the code to the van phone and to each HOD and manager phone. They paste it on first launch, then create their accounts.
-10. **More → Users & roles:** approve each person and set their role (Driver, HOD, GM, OM).
-11. On the van phone, sign in as the driver and complete **Van phone setup**:
+8. **More → Vehicles:** add each hotel vehicle.
+9. **More → Fuel, hotel & tracking settings:** set the hotel location and the diesel and petrol prices.
+10. **More → Share setup code.** Send the code to each driver, HOD and manager phone. They paste it on first launch, then create their accounts.
+11. **More → Users & roles:** approve each person and set their role (Driver, HOD, GM, OM).
+12. On each driver's phone, sign in as that driver and complete **Driver phone setup**:
     - Location set to *Allow all the time*
     - Notifications allowed
-    - Nearby devices allowed
     - Battery optimisation ignored
-
-    Keep the phone on the van charger.
 
 ## Firestore rules
 
-When an update adds data, it may need new rules. Whenever `firestore.rules` changes in this repo, copy it again into **Firebase console → Firestore Database → Rules → Publish**. Version 1.0.6+ needs this for driver duty logs.
+When an update adds data, it may need new rules. Whenever `firestore.rules` changes in this repo, copy it again into **Firebase console → Firestore Database → Rules → Publish**. Version 1.0.6+ needs this for driver duty logs; 1.0.7+ for vehicles and the live fleet map.
 
 ## Updating the app (keeps all data)
 

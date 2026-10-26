@@ -1,5 +1,7 @@
 package com.cinnamon.vantracker.ui
 
+import android.content.Context
+import android.graphics.Bitmap
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -18,17 +20,24 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
+import androidx.core.graphics.drawable.toBitmap
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.cinnamon.vantracker.BuildConfig
+import com.cinnamon.vantracker.R
 import com.cinnamon.vantracker.data.TrackPoint
+import com.cinnamon.vantracker.tracking.TripCalc
 import com.google.android.gms.maps.CameraUpdateFactory
+import com.google.android.gms.maps.model.BitmapDescriptorFactory
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.LatLngBounds
@@ -51,7 +60,18 @@ import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.views.overlay.Marker as OsmMarker
 import org.osmdroid.views.overlay.Polyline as OsmPolyline
 
-data class MapPin(val lat: Double, val lng: Double, val title: String)
+/**
+ * A point on the map. [vehicle] pins are drawn as a top-down car (like Uber / PickMe),
+ * rotated to [bearing] (degrees clockwise from north).
+ */
+data class MapPin(
+    val lat: Double,
+    val lng: Double,
+    val title: String,
+    val vehicle: Boolean = false,
+    val bearing: Float = 0f,
+    val snippet: String = "",
+)
 
 /** Default camera: Kandy, until real data arrives. */
 private const val DEFAULT_LAT = 7.2906
@@ -62,6 +82,22 @@ private fun routeColor(dark: Boolean) = if (dark) Color(0xFFDB6BC2) else Color(0
 /** True when the build carries a Google Maps API key (GitHub secret MAPS_API_KEY). */
 val googleMapsEnabled: Boolean get() = BuildConfig.MAPS_API_KEY.isNotBlank()
 
+private var carBitmapCache: Bitmap? = null
+
+/** The car marker image, rendered once from the vector drawable. */
+private fun carBitmap(ctx: Context): Bitmap = carBitmapCache ?: run {
+    val d = ContextCompat.getDrawable(ctx, R.drawable.ic_vehicle_top)!!
+    d.toBitmap(d.intrinsicWidth, d.intrinsicHeight).also { carBitmapCache = it }
+}
+
+/** While following a ride, the last route point becomes the car, facing the last leg. */
+private fun withVehicleAtEnd(path: List<TrackPoint>, pins: List<MapPin>, follow: Boolean, title: String): Pair<Boolean, List<MapPin>> {
+    if (!follow || path.isEmpty()) return false to pins
+    val last = path.last()
+    val bearing = if (path.size >= 2) path[path.size - 2].let { TripCalc.bearing(it.lat, it.lng, last.lat, last.lng) } else 0f
+    return true to pins + MapPin(last.lat, last.lng, title, vehicle = true, bearing = bearing)
+}
+
 /**
  * Map used everywhere in the app.
  *
@@ -70,7 +106,7 @@ val googleMapsEnabled: Boolean get() = BuildConfig.MAPS_API_KEY.isNotBlank()
  * - Without a key: OpenStreetMap – free and keyless; viewed tiles are cached for offline.
  *
  * [fitKey]: whenever it changes the camera re-fits to the path and pins; [follow] keeps
- * the latest point centred (live tracking).
+ * the latest point centred (live tracking) and shows it as the vehicle.
  */
 @Composable
 fun VanMap(
@@ -79,19 +115,22 @@ fun VanMap(
     pins: List<MapPin> = emptyList(),
     fitKey: Any? = null,
     follow: Boolean = false,
+    vehicleTitle: String = "Vehicle",
     onTap: ((Double, Double) -> Unit)? = null,
 ) {
-    if (googleMapsEnabled) GoogleVanMap(modifier, path, pins, fitKey, follow, onTap)
-    else OsmVanMap(modifier, path, pins, fitKey, follow, onTap)
+    val (carAtEnd, allPins) = withVehicleAtEnd(path, pins, follow, vehicleTitle)
+    if (googleMapsEnabled) GoogleVanMap(modifier, path, allPins, carAtEnd, fitKey, follow, onTap)
+    else OsmVanMap(modifier, path, allPins, carAtEnd, fitKey, follow, onTap)
 }
 
 // ------------------------------------------------------------------ Google Maps
 
 @Composable
 private fun GoogleVanMap(
-    modifier: Modifier, path: List<TrackPoint>, pins: List<MapPin>, fitKey: Any?, follow: Boolean,
+    modifier: Modifier, path: List<TrackPoint>, pins: List<MapPin>, carAtEnd: Boolean, fitKey: Any?, follow: Boolean,
     onTap: ((Double, Double) -> Unit)?,
 ) {
+    val ctx = LocalContext.current
     val dark = isDarkTheme()
     var satellite by rememberSaveable { mutableStateOf(false) }
     var loaded by remember { mutableStateOf(false) }
@@ -129,10 +168,18 @@ private fun GoogleVanMap(
             onMapLoaded = { loaded = true },
             onMapClick = { onTap?.invoke(it.latitude, it.longitude) },
         ) {
+            // Created inside the map content: the Maps SDK is initialised by now.
+            val carIcon = remember { BitmapDescriptorFactory.fromBitmap(carBitmap(ctx)) }
             if (route.size >= 2) Polyline(points = route, color = routeColor(dark), width = 12f)
             route.firstOrNull()?.let { Marker(state = MarkerState(it), title = "Start") }
-            if (route.size > 1) Marker(state = MarkerState(route.last()), title = if (follow) "Van" else "End")
-            pins.forEach { Marker(state = MarkerState(LatLng(it.lat, it.lng)), title = it.title) }
+            if (route.size > 1 && !carAtEnd) Marker(state = MarkerState(route.last()), title = "End")
+            pins.forEach { p ->
+                if (p.vehicle) Marker(
+                    state = MarkerState(LatLng(p.lat, p.lng)), title = p.title, snippet = p.snippet.ifBlank { null },
+                    icon = carIcon, rotation = p.bearing, flat = true, anchor = Offset(0.5f, 0.5f), zIndex = 2f,
+                )
+                else Marker(state = MarkerState(LatLng(p.lat, p.lng)), title = p.title, snippet = p.snippet.ifBlank { null })
+            }
         }
         MapToggle(if (satellite) "Map" else "Satellite", Modifier.align(Alignment.TopEnd)) { satellite = !satellite }
     }
@@ -158,7 +205,7 @@ private fun MapToggle(text: String, modifier: Modifier, onClick: () -> Unit) {
 
 @Composable
 private fun OsmVanMap(
-    modifier: Modifier, path: List<TrackPoint>, pins: List<MapPin>, fitKey: Any?, follow: Boolean,
+    modifier: Modifier, path: List<TrackPoint>, pins: List<MapPin>, carAtEnd: Boolean, fitKey: Any?, follow: Boolean,
     onTap: ((Double, Double) -> Unit)?,
 ) {
     val dark = isDarkTheme()
@@ -214,15 +261,24 @@ private fun OsmVanMap(
                     position = geo.first(); title = "Start"
                     setAnchor(OsmMarker.ANCHOR_CENTER, OsmMarker.ANCHOR_BOTTOM)
                 })
-                if (geo.size > 1) map.overlays.add(OsmMarker(map).apply {
-                    position = geo.last(); title = if (follow) "Van" else "End"
+                if (geo.size > 1 && !carAtEnd) map.overlays.add(OsmMarker(map).apply {
+                    position = geo.last(); title = "End"
                     setAnchor(OsmMarker.ANCHOR_CENTER, OsmMarker.ANCHOR_BOTTOM)
                 })
             }
             pins.forEach { p ->
                 map.overlays.add(OsmMarker(map).apply {
                     position = GeoPoint(p.lat, p.lng); title = p.title
-                    setAnchor(OsmMarker.ANCHOR_CENTER, OsmMarker.ANCHOR_BOTTOM)
+                    if (p.snippet.isNotBlank()) snippet = p.snippet
+                    if (p.vehicle) {
+                        icon = android.graphics.drawable.BitmapDrawable(map.resources, carBitmap(map.context))
+                        setAnchor(OsmMarker.ANCHOR_CENTER, OsmMarker.ANCHOR_CENTER)
+                        isFlat = true
+                        // osmdroid rotates counter-clockwise; bearings are clockwise from north.
+                        rotation = -p.bearing
+                    } else {
+                        setAnchor(OsmMarker.ANCHOR_CENTER, OsmMarker.ANCHOR_BOTTOM)
+                    }
                 })
             }
             val all = geo + pins.map { GeoPoint(it.lat, it.lng) }

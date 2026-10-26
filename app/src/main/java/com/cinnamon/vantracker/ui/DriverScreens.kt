@@ -85,7 +85,6 @@ object DriverPermissions {
     fun location(ctx: Context) = granted(ctx, Manifest.permission.ACCESS_FINE_LOCATION)
     fun background(ctx: Context) = Build.VERSION.SDK_INT < 29 || granted(ctx, Manifest.permission.ACCESS_BACKGROUND_LOCATION)
     fun notifications(ctx: Context) = Build.VERSION.SDK_INT < 33 || granted(ctx, Manifest.permission.POST_NOTIFICATIONS)
-    fun bluetooth(ctx: Context) = Build.VERSION.SDK_INT < 31 || granted(ctx, Manifest.permission.BLUETOOTH_CONNECT)
     fun battery(ctx: Context) = ctx.getSystemService(PowerManager::class.java)?.isIgnoringBatteryOptimizations(ctx.packageName) ?: true
 
     fun allGranted(ctx: Context) = location(ctx) && background(ctx)
@@ -116,8 +115,8 @@ fun DriverSetupScreen(s: Session) {
     Scaffold(topBar = { AppBar("Driver phone setup", onBack = { s.nav.back() }) }) { pad ->
         Column(Modifier.padding(pad).verticalScroll(rememberScrollState())) {
             Text(
-                "Grant everything below so your trips are recorded with the screen off. " +
-                    "Your location is only used while you are on duty and in the van, or during a trip – never at home.",
+                "Grant everything below so your rides are recorded with the screen off. " +
+                    "Your location is only recorded during a ride – never off duty or at home.",
                 modifier = Modifier.padding(16.dp),
             )
             key(stamp) {
@@ -130,30 +129,32 @@ fun DriverSetupScreen(s: Session) {
                 PermissionRow("3. Notifications (trip alerts)", DriverPermissions.notifications(ctx)) {
                     if (Build.VERSION.SDK_INT >= 33) launcher.launch(arrayOf(Manifest.permission.POST_NOTIFICATIONS))
                 }
-                PermissionRow("4. Nearby devices (van Bluetooth)", DriverPermissions.bluetooth(ctx)) {
-                    if (Build.VERSION.SDK_INT >= 31) launcher.launch(arrayOf(Manifest.permission.BLUETOOTH_CONNECT))
-                }
-                PermissionRow("5. Ignore battery optimisation", DriverPermissions.battery(ctx)) {
+                PermissionRow("4. Ignore battery optimisation", DriverPermissions.battery(ctx)) {
                     runCatching {
                         ctx.startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:${ctx.packageName}")))
                     }
                 }
-                Text(
-                    "Pair this phone once with the van's Bluetooth (${s.settings.btDeviceName.ifBlank { "name set by the admin" }}). " +
-                        "Being connected to it is how the app knows you are in the van.",
-                    color = TextSecondary, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                )
                 SectionHeader("Phone type")
                 SectionCard {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text("Dedicated van phone", style = androidx.compose.material3.MaterialTheme.typography.titleSmall)
+                            Text("Dedicated vehicle phone", style = androidx.compose.material3.MaterialTheme.typography.titleSmall)
                             Text(
-                                "Only for a spare phone that stays in the van. It then watches for movement all the time.",
+                                "Only for a spare phone that stays in one vehicle on its charger. It then watches for movement " +
+                                    "all the time and reports any drive without an approved ride.",
                                 color = TextSecondary, fontSize = 13.sp,
                             )
                         }
                         Switch(dedicated, { dedicated = it; DevicePrefs.setDedicated(ctx, it) })
+                    }
+                    if (dedicated) {
+                        val vehicles = rememberVehicles(s)
+                        var vid by remember { mutableStateOf(DevicePrefs.dedicatedVehicleId(ctx).ifBlank { vehicles.firstOrNull()?.id ?: "" }) }
+                        Spacer(Modifier.height(8.dp))
+                        Picker("Installed in", vehicles.firstOrNull { it.id == vid }?.label ?: "Choose vehicle", vehicles.map { it.label }) { l ->
+                            vid = vehicles.first { it.label == l }.id; DevicePrefs.setDedicatedVehicleId(ctx, vid)
+                        }
+                        if (DevicePrefs.dedicatedVehicleId(ctx).isBlank() && vid.isNotBlank()) DevicePrefs.setDedicatedVehicleId(ctx, vid)
                     }
                 }
                 Spacer(Modifier.height(12.dp))
@@ -207,16 +208,16 @@ fun DriverHome(s: Session) {
     val tick = rememberResumeTick()
     val permsOk = remember(tick) { DriverPermissions.allGranted(ctx) }
     val dedicated = remember(tick) { DevicePrefs.isDedicated(ctx) }
-    var confirmTrip by remember { mutableStateOf<Trip?>(null) }
     var confirmRelease by remember { mutableStateOf<Trip?>(null) }
-    var confirmSchedule by remember { mutableStateOf<Schedule?>(null) }
     var menu by remember { mutableStateOf(false) }
     var accepting by remember { mutableStateOf("") }
     var message by remember { mutableStateOf<Pair<String, Boolean>?>(null) } // text, isError
 
     val recording = live.state.mode != TrackMode.GUARD
-    val inProgress = openTrips.firstOrNull { it.status == TripStatus.IN_PROGRESS && it.driverUid != me.uid }
-    val vanBusy = inProgress != null
+    val vehicles = rememberVehicles(s)
+    val busy = busyVehicles(openTrips.filter { it.driverUid != me.uid })
+    val allBusy = vehicles.all { it.id in busy }
+    var pickFor by remember { mutableStateOf<Any?>(null) } // Trip or Schedule waiting for a vehicle choice
     val myTrips = openTrips.filter { it.status == TripStatus.ASSIGNED && it.driverUid == me.uid }
     val newRequests = openTrips.filter { it.status == TripStatus.READY && it.driverUid.isBlank() }
     val others = openTrips.filter { it.driverUid.isNotBlank() && it.driverUid != me.uid && it.status != TripStatus.READY }
@@ -225,7 +226,7 @@ fun DriverHome(s: Session) {
     val todaysSchedules = schedules.filter {
         it.active && TripCalc.isoDay(System.currentTimeMillis()) in it.days && Repo.scheduleTripId(it.id, dayKey) !in knownIds
     }
-    val canStart = me.onDuty && permsOk && !recording && !vanBusy
+    val canStart = me.onDuty && permsOk && !recording && !allBusy
 
     fun setDuty(on: Boolean) {
         if (on && !permsOk) {
@@ -278,21 +279,19 @@ fun DriverHome(s: Session) {
                 }
             }
 
-            // ---- van status
+            // ---- vehicles
             item {
-                SectionCard("Van") {
-                    InfoRow(
-                        "Status", when {
-                            recording && live.state.mode == TrackMode.TRIP -> "On trip with you"
-                            recording -> "Unapproved movement (you)"
-                            inProgress != null -> "Out with ${inProgress.driverName}"
-                            else -> "Available"
-                        },
-                        if (vanBusy || recording) WarnOrange else OkGreen,
-                    )
-                    if (s.settings.btDeviceName.isNotBlank()) InfoRow("Your phone in the van", if (live.btConnected) "Yes (Bluetooth)" else "No")
-                    if (live.running && live.lastFix > 0) InfoRow("GPS", "±${live.lastAccuracy.toInt()} m · ${TripCalc.time(live.lastFix)}")
-                    if (dedicated) Text("Dedicated van phone – always watching for movement.", color = TextSecondary, fontSize = 13.sp)
+                SectionCard(if (vehicles.size > 1) "Vehicles" else "Vehicle") {
+                    vehicles.forEach { v ->
+                        val mine = recording && live.state.vehicleId == v.id
+                        InfoRow(
+                            "${vehicleIcon(v.type)} ${v.label}",
+                            when { mine -> "With you"; v.id in busy -> "Out with ${busy[v.id]}"; else -> "Available" },
+                            when { mine -> OkGreen; v.id in busy -> WarnOrange; else -> OkGreen },
+                        )
+                    }
+                    if (live.running && live.lastFix > 0 && recording) InfoRow("GPS", "±${live.lastAccuracy.toInt()} m · ${TripCalc.time(live.lastFix)}")
+                    if (dedicated) Text("Dedicated vehicle phone – always watching for movement.", color = TextSecondary, fontSize = 13.sp)
                 }
             }
 
@@ -311,9 +310,9 @@ fun DriverHome(s: Session) {
             if (myTrips.isEmpty()) item { Empty("No trips accepted yet.") }
             items(myTrips, key = { "m" + it.id }) { t ->
                 TripCard(t, s) {
-                    if (vanBusy) Text("Van is out with ${inProgress?.driverName}. Start when it's back.", color = WarnOrange, fontSize = 13.sp)
+                    if (allBusy) Text("All vehicles are out right now. Start when one is back.", color = WarnOrange, fontSize = 13.sp)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(enabled = canStart, onClick = { confirmTrip = t }) { Text("Start ride") }
+                        Button(enabled = canStart, onClick = { pickFor = t }) { Text("Start ride") }
                         OutlinedButton(onClick = { confirmRelease = t }) { Text("Release") }
                     }
                     TextButton(onClick = { s.nav.go(Screen.TripDetail(t.id)) }) { Text("Details") }
@@ -352,7 +351,7 @@ fun DriverHome(s: Session) {
                     InfoRow("Category", sc.category)
                     if (sc.stops.isNotEmpty()) Text("Stops: " + sc.stops.joinToString(" → ") { it.name }, fontSize = 13.sp)
                     Spacer(Modifier.height(6.dp))
-                    Button(enabled = canStart, onClick = { confirmSchedule = sc }) { Text("Start run") }
+                    Button(enabled = canStart, onClick = { pickFor = sc }) { Text("Start run") }
                 }
             }
 
@@ -378,21 +377,30 @@ fun DriverHome(s: Session) {
         }
     }
 
-    confirmTrip?.let { t ->
-        AlertDialog(
-            onDismissRequest = { confirmTrip = null },
-            title = { Text("Start ride?") },
-            text = { Text("Confirm the passenger(s) are on board for:\n${t.title}") },
-            confirmButton = {
-                Button(onClick = {
-                    Repo.startTrip(t, me, System.currentTimeMillis())
-                    TrackingService.startTrip(ctx, t.id, t.title, t.requestIds)
-                    confirmTrip = null
-                    s.nav.go(Screen.ActiveTrip)
-                }) { Text("Passengers on board – Start") }
-            },
-            dismissButton = { TextButton(onClick = { confirmTrip = null }) { Text("Cancel") } },
-        )
+    // Start = choose the vehicle (like accepting a ride in Uber), passengers on board, go.
+    pickFor?.let { target ->
+        val t = target as? Trip
+        val sc = target as? Schedule
+        VehiclePickerDialog(
+            title = if (t != null) "Start ride" else "Start ${sc?.title}",
+            vehicles = vehicles,
+            busy = busy,
+            preselect = t?.vehicleId?.ifBlank { null } ?: DevicePrefs.lastVehicleId(ctx),
+            confirmText = if (t != null) "Passengers on board – Start" else "Start",
+            onDismiss = { pickFor = null },
+        ) { v ->
+            DevicePrefs.setLastVehicleId(ctx, v.id)
+            val now = System.currentTimeMillis()
+            if (t != null) {
+                Repo.startTrip(t, me, now, v)
+                TrackingService.startTrip(ctx, t.id, t.title, t.requestIds, v)
+            } else if (sc != null) {
+                val id = Repo.startScheduled(sc, me, now, v)
+                TrackingService.startTrip(ctx, id, sc.title, emptyList(), v)
+            }
+            pickFor = null
+            s.nav.go(Screen.ActiveTrip)
+        }
     }
     confirmRelease?.let { t ->
         AlertDialog(
@@ -401,22 +409,6 @@ fun DriverHome(s: Session) {
             text = { Text("“${t.title}” goes back to all drivers so someone else can take it.") },
             confirmButton = { Button(onClick = { Repo.releaseTrip(t); confirmRelease = null }) { Text("Release") } },
             dismissButton = { TextButton(onClick = { confirmRelease = null }) { Text("Keep it") } },
-        )
-    }
-    confirmSchedule?.let { sc ->
-        AlertDialog(
-            onDismissRequest = { confirmSchedule = null },
-            title = { Text("Start scheduled run?") },
-            text = { Text("${sc.title} (${sc.time}) is pre-approved. Start recording now?") },
-            confirmButton = {
-                Button(onClick = {
-                    val id = Repo.startScheduled(sc, me, System.currentTimeMillis())
-                    TrackingService.startTrip(ctx, id, sc.title, emptyList())
-                    confirmSchedule = null
-                    s.nav.go(Screen.ActiveTrip)
-                }) { Text("Start") }
-            },
-            dismissButton = { TextButton(onClick = { confirmSchedule = null }) { Text("Cancel") } },
         )
     }
     if (menu) {
@@ -459,6 +451,7 @@ fun TripCard(t: Trip, s: Session, onClick: (() -> Unit)? = null, actions: @Compo
         if (t.stops.isNotEmpty()) Text("Stops: " + t.stops.joinToString(" → ") { it.name }, fontSize = 13.sp)
         if (t.passengers > 0) InfoRow("Passengers", t.passengers.toString())
         if (t.driverName.isNotBlank()) InfoRow("Driver", t.driverName)
+        if (t.vehicleName.isNotBlank()) InfoRow("Vehicle", t.vehicleName)
         if (t.status == TripStatus.COMPLETED) {
             InfoRow("Distance / time", "${TripCalc.km(t.distanceKm)} · ${TripCalc.duration(t.durationMin)}")
             InfoRow("Fuel / cost", "${TripCalc.liters(t.fuelLiters)} · ${TripCalc.money(t.fuelCost, s.settings.currency)}")
@@ -497,15 +490,18 @@ fun ActiveTripScreen(s: Session) {
     Scaffold(topBar = { AppBar(if (unauthorized) "Unapproved movement" else "Ride in progress", onBack = { s.nav.back() }) }) { pad ->
         Column(Modifier.padding(pad).fillMaxSize()) {
             if (unauthorized) Banner("No approved trip. Your route is recorded and management is notified. Enter the reason below.", DangerRed)
+            val vehicle = rememberVehicles(s, includeInactive = true).firstOrNull { it.id == st.vehicleId }
             VanMap(
                 modifier = Modifier.fillMaxWidth().height(260.dp),
                 path = live.points,
                 fitKey = st.tripId,
                 follow = true,
+                vehicleTitle = st.vehicleName.ifBlank { "Vehicle" },
             )
             Column(Modifier.verticalScroll(rememberScrollState())) {
-                val (km, liters, cost) = TripCalc.fuel(st.distanceM / 1000, s.settings)
+                val (km, liters, cost) = TripCalc.fuel(st.distanceM / 1000, s.settings, vehicle)
                 SectionCard(st.tripTitle) {
+                    if (st.vehicleName.isNotBlank()) InfoRow("Vehicle", st.vehicleName)
                     InfoRow("Elapsed", TripCalc.durationMs(now - st.startTime))
                     InfoRow("Distance", TripCalc.km(km))
                     InfoRow("Moving / stopped", "${TripCalc.durationMs(st.movingMs)} / ${TripCalc.durationMs(st.stoppedMs)}")

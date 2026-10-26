@@ -34,7 +34,9 @@ object Repo {
     val fuelLogs get() = db.collection("fuelLogs")
     val dutyLogs get() = db.collection("dutyLogs")
     val settingsDoc get() = db.collection("config").document("settings")
-    val liveDoc get() = db.collection("vehicle").document("live")
+    val vehicles get() = db.collection("vehicles")
+    /** One live-position document per vehicle id. */
+    val live get() = db.collection("live")
     val bootstrapDoc get() = db.collection("meta").document("bootstrap")
 
     fun now() = System.currentTimeMillis()
@@ -68,7 +70,14 @@ object Repo {
     }
 
     fun settingsFlow() = docFlow(settingsDoc).map { AppSettings.from(it) }
-    fun liveFlow() = docFlow(liveDoc).map { LiveStatus.from(it) }
+    fun liveAllFlow() = queryFlow(live).map { s -> s?.documents?.map { LiveStatus.from(it) }.orEmpty().filter { it.updatedAt > 0 } }
+
+    fun vehiclesFlow() = queryFlow(vehicles).map { s -> s?.documents?.map(Vehicle::from).orEmpty().sortedBy { it.name } }
+
+    fun saveVehicle(v: Vehicle) {
+        val ref = if (v.id.isBlank()) vehicles.document() else vehicles.document(v.id)
+        ref.set(v.toMap())
+    }
     fun tripFlow(id: String) = docFlow(trips.document(id)).map { d -> if (d != null && d.exists()) Trip.from(d) else null }
 
     fun usersFlow() = queryFlow(users).map { s -> s?.documents?.map(UserProfile::from).orEmpty().sortedBy { it.name } }
@@ -162,12 +171,14 @@ object Repo {
     suspend fun approveRequest(
         r: TripRequest, approver: UserProfile, comment: String, target: String?, schedules: List<Schedule>,
         driver: UserProfile? = null,
+        vehicle: Vehicle? = null,
     ) {
         val stops = r.stops.map { it.copy(requestId = r.id, department = r.department) }
         // Pre-assigned driver (optional) – otherwise every driver is alerted and the first to accept takes it.
         val driverFields: Map<String, Any?> = if (driver != null) mapOf(
             "status" to TripStatus.ASSIGNED.name, "driverUid" to driver.uid, "driverName" to driver.name, "assignedAt" to now(),
-        ) else emptyMap()
+        ) else emptyMap<String, Any?>()
+        val vehicleFields: Map<String, Any?> = if (vehicle != null) mapOf("vehicleId" to vehicle.id, "vehicleName" to vehicle.label) else emptyMap()
         val tripRef: DocumentReference
         val batch = db.batch()
         when {
@@ -202,6 +213,7 @@ object Repo {
                         "createdAt" to now(), "openedAt" to now(), "createdBy" to approver.name,
                     )
                     data += driverFields
+                    data += vehicleFields
                     // Keep the schedule's own stops ahead of the extra ones.
                     data["stops"] = FieldValue.arrayUnion(*(sched.stops + stops).map { it.toMap() }.toTypedArray())
                     data["departments"] = FieldValue.arrayUnion(*listOf(sched.department, r.department).filter { it.isNotBlank() }.toTypedArray())
@@ -219,7 +231,7 @@ object Repo {
                         "plannedTime" to r.requestedTime, "passengers" to r.passengers,
                         "createdAt" to now(), "openedAt" to now(), "createdBy" to approver.name,
                         "driverUid" to "", "driverName" to "",
-                    ) + driverFields
+                    ) + driverFields + vehicleFields
                 )
             }
         }
@@ -318,12 +330,13 @@ object Repo {
 
     // ------------------------------------------------------------------ trips (driver)
 
-    fun startTrip(trip: Trip, driver: UserProfile, startTime: Long) {
+    fun startTrip(trip: Trip, driver: UserProfile, startTime: Long, vehicle: Vehicle) {
         val batch = db.batch()
         batch.update(
             trips.document(trip.id), mapOf(
                 "status" to TripStatus.IN_PROGRESS.name, "startTime" to startTime,
                 "driverUid" to driver.uid, "driverName" to driver.name,
+                "vehicleId" to vehicle.id, "vehicleName" to vehicle.label,
             )
         )
         trip.requestIds.forEach { batch.update(requests.document(it), "status", RequestStatus.IN_PROGRESS.name) }
@@ -331,7 +344,7 @@ object Repo {
     }
 
     /** Starts today's run of a pre-approved schedule (no approval needed). Returns the trip id. */
-    fun startScheduled(s: Schedule, driver: UserProfile, startTime: Long): String {
+    fun startScheduled(s: Schedule, driver: UserProfile, startTime: Long, vehicle: Vehicle): String {
         val day = dateKey(startTime)
         val ref = trips.document(scheduleTripId(s.id, day))
         ref.set(
@@ -342,6 +355,7 @@ object Repo {
                 "departments" to FieldValue.arrayUnion(*listOf(s.department).filter { it.isNotBlank() }.toTypedArray()),
                 "stops" to FieldValue.arrayUnion(*s.stops.map { it.toMap() }.toTypedArray()),
                 "startTime" to startTime, "driverUid" to driver.uid, "driverName" to driver.name,
+                "vehicleId" to vehicle.id, "vehicleName" to vehicle.label,
                 "createdAt" to now(), "createdBy" to "Schedule",
             ),
             SetOptions.merge(),
@@ -349,7 +363,7 @@ object Repo {
         return ref.id
     }
 
-    fun createUnauthorizedTrip(driverUid: String, driverName: String, startTime: Long): String {
+    fun createUnauthorizedTrip(driverUid: String, driverName: String, startTime: Long, vehicleId: String, vehicleName: String): String {
         val ref = trips.document()
         val batch = db.batch()
         batch.set(
@@ -359,13 +373,14 @@ object Repo {
                 "purpose" to "", "departments" to emptyList<String>(), "requestIds" to emptyList<String>(),
                 "stops" to emptyList<Any>(), "plannedTime" to startTime, "startTime" to startTime,
                 "driverUid" to driverUid, "driverName" to driverName, "needsReason" to true,
+                "vehicleId" to vehicleId, "vehicleName" to vehicleName,
                 "reason" to "", "createdAt" to now(), "createdBy" to "Auto-detected",
             )
         )
         batch.set(
             alerts.document("move_${ref.id}"), mapOf(
                 "type" to AlertItem.UNAUTHORIZED_MOVEMENT, "severity" to "WARN",
-                "title" to "Van moving without an approved trip",
+                "title" to "${vehicleName.ifBlank { "Vehicle" }} moving without an approved trip",
                 "message" to "Movement detected at ${TripCalc.time(startTime)} (driver: ${driverName.ifBlank { "unknown" }}). The driver has been asked for a reason.",
                 "tripId" to ref.id, "createdAt" to now(), "acknowledged" to false,
             )
@@ -395,8 +410,8 @@ object Repo {
         )
     }
 
-    fun updateLive(fields: Map<String, Any?>) {
-        liveDoc.set(fields, SetOptions.merge())
+    fun updateLive(vehicleId: String, fields: Map<String, Any?>) {
+        live.document(vehicleId.ifBlank { Vehicle.DEFAULT_ID }).set(fields, SetOptions.merge())
     }
 
     fun submitReason(tripId: String, reason: String) {
@@ -410,12 +425,12 @@ object Repo {
         trips.document(tripId).update(mapOf("reviewStatus" to if (accepted) "ACCEPTED" else "FLAGGED", "reviewedBy" to by))
     }
 
-    fun recalcTrip(t: Trip, s: AppSettings, gpsKm: Double) {
-        val (km, liters, cost) = TripCalc.fuel(gpsKm, s)
+    fun recalcTrip(t: Trip, s: AppSettings, gpsKm: Double, v: Vehicle?) {
+        val (km, liters, cost) = TripCalc.fuel(gpsKm, s, v)
         trips.document(t.id).update(
             mapOf(
                 "distanceKm" to km, "fuelLiters" to liters, "fuelCost" to cost,
-                "fuelPrice" to s.fuelPricePerLiter, "kmPerLiter" to s.kmPerLiter,
+                "fuelPrice" to s.priceFor(v?.fuelType ?: "Diesel"), "kmPerLiter" to TripCalc.kmPerLiter(s, v),
             )
         )
     }

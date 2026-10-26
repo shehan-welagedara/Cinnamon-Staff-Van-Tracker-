@@ -233,6 +233,8 @@ data class Trip(
     /** When the trip became open for drivers (approval, or a driver releasing it). */
     val openedAt: Long = 0,
     val assignedAt: Long? = null,
+    val vehicleId: String = "",
+    val vehicleName: String = "",
 ) {
     val isActive get() = status == TripStatus.IN_PROGRESS
     val isOpen get() = status == TripStatus.READY || status == TripStatus.ASSIGNED
@@ -255,6 +257,8 @@ data class Trip(
             driverName = d.str("driverName"),
             openedAt = d.long("openedAt").takeIf { it > 0 } ?: d.long("createdAt"),
             assignedAt = d.getLong("assignedAt"),
+            vehicleId = d.str("vehicleId"),
+            vehicleName = d.str("vehicleName"),
             startTime = d.getLong("startTime"),
             endTime = d.getLong("endTime"),
             distanceKm = d.dbl("distanceKm"),
@@ -362,10 +366,14 @@ data class FuelLog(
 
 /** Admin-configurable settings, stored in config/settings. */
 data class AppSettings(
+    /** Legacy single-vehicle fields – used to seed the first vehicle. */
     val vehicleName: String = "Staff Van",
     val plateNo: String = "",
     val currency: String = "LKR",
+    /** Diesel price per litre. */
     val fuelPricePerLiter: Double = 300.0,
+    val petrolPricePerLiter: Double = 310.0,
+    /** Default km/L for vehicles that don't set their own. */
     val kmPerLiter: Double = 9.0,
     /** Correction applied to GPS distance, e.g. +3 if GPS reads 3% less than the odometer. */
     val distanceCorrectionPct: Double = 0.0,
@@ -375,21 +383,23 @@ data class AppSettings(
     val geofenceRadiusM: Double = 300.0,
     val movementSpeedKmh: Double = 12.0,
     val minGpsAccuracyM: Double = 35.0,
+    /** Dedicated vehicle phones: charger power = ignition on. */
     val usePowerTrigger: Boolean = true,
-    val btDeviceName: String = "",
     /** Hour of the day (0-23) by which unauthorized movement reasons must be entered. */
     val reasonDeadlineHour: Int = 22,
     val autoEndUnauthorizedMin: Int = 5,
 ) {
     val hotelSet get() = hotelLat != 0.0 || hotelLng != 0.0
 
+    fun priceFor(fuelType: String) = if (fuelType.equals("Petrol", ignoreCase = true)) petrolPricePerLiter else fuelPricePerLiter
+
     fun toMap(): Map<String, Any?> = mapOf(
         "vehicleName" to vehicleName, "plateNo" to plateNo, "currency" to currency,
-        "fuelPricePerLiter" to fuelPricePerLiter, "kmPerLiter" to kmPerLiter,
+        "fuelPricePerLiter" to fuelPricePerLiter, "petrolPricePerLiter" to petrolPricePerLiter, "kmPerLiter" to kmPerLiter,
         "distanceCorrectionPct" to distanceCorrectionPct, "hotelName" to hotelName,
         "hotelLat" to hotelLat, "hotelLng" to hotelLng, "geofenceRadiusM" to geofenceRadiusM,
         "movementSpeedKmh" to movementSpeedKmh, "minGpsAccuracyM" to minGpsAccuracyM,
-        "usePowerTrigger" to usePowerTrigger, "btDeviceName" to btDeviceName,
+        "usePowerTrigger" to usePowerTrigger,
         "reasonDeadlineHour" to reasonDeadlineHour, "autoEndUnauthorizedMin" to autoEndUnauthorizedMin,
     )
 
@@ -402,6 +412,7 @@ data class AppSettings(
                 plateNo = d.str("plateNo"),
                 currency = d.getString("currency") ?: def.currency,
                 fuelPricePerLiter = d.getDouble("fuelPricePerLiter") ?: def.fuelPricePerLiter,
+                petrolPricePerLiter = d.getDouble("petrolPricePerLiter") ?: def.petrolPricePerLiter,
                 kmPerLiter = d.getDouble("kmPerLiter") ?: def.kmPerLiter,
                 distanceCorrectionPct = d.getDouble("distanceCorrectionPct") ?: 0.0,
                 hotelName = d.getString("hotelName") ?: def.hotelName,
@@ -411,7 +422,6 @@ data class AppSettings(
                 movementSpeedKmh = d.getDouble("movementSpeedKmh") ?: def.movementSpeedKmh,
                 minGpsAccuracyM = d.getDouble("minGpsAccuracyM") ?: def.minGpsAccuracyM,
                 usePowerTrigger = d.getBoolean("usePowerTrigger") ?: true,
-                btDeviceName = d.str("btDeviceName"),
                 reasonDeadlineHour = d.getLong("reasonDeadlineHour")?.toInt() ?: def.reasonDeadlineHour,
                 autoEndUnauthorizedMin = d.getLong("autoEndUnauthorizedMin")?.toInt() ?: def.autoEndUnauthorizedMin,
             )
@@ -419,11 +429,53 @@ data class AppSettings(
     }
 }
 
-/** Live position of the van, in vehicle/live. */
+val VEHICLE_TYPES = listOf("Van", "Car", "SUV", "Mini Bus", "Bus", "Lorry", "Three-wheeler", "Motorbike")
+val FUEL_TYPES = listOf("Diesel", "Petrol")
+
+/** A hotel vehicle (collection vehicles), managed by the administrator. */
+data class Vehicle(
+    val id: String = "",
+    val name: String = "",
+    val plateNo: String = "",
+    val type: String = "Van",
+    val seats: Int = 0,
+    val fuelType: String = "Diesel",
+    val kmPerLiter: Double = 9.0,
+    val active: Boolean = true,
+    val notes: String = "",
+) {
+    val label get() = if (plateNo.isBlank()) name else "$name · $plateNo"
+
+    fun toMap(): Map<String, Any?> = mapOf(
+        "name" to name, "plateNo" to plateNo, "type" to type, "seats" to seats,
+        "fuelType" to fuelType, "kmPerLiter" to kmPerLiter, "active" to active, "notes" to notes,
+    )
+
+    companion object {
+        /** Id used for the original single van, so trips recorded before vehicles existed still match. */
+        const val DEFAULT_ID = "default"
+
+        fun from(d: DocumentSnapshot) = Vehicle(
+            id = d.id, name = d.str("name"), plateNo = d.str("plateNo"), type = d.getString("type") ?: "Van",
+            seats = d.long("seats").toInt(), fuelType = d.getString("fuelType") ?: "Diesel",
+            kmPerLiter = d.dbl("kmPerLiter").takeIf { it > 0 } ?: 9.0, active = d.getBoolean("active") ?: true,
+            notes = d.str("notes"),
+        )
+
+        /** Until the admin adds vehicles, the van from the old single-vehicle settings. */
+        fun fallback(s: AppSettings) = Vehicle(DEFAULT_ID, s.vehicleName.ifBlank { "Staff Van" }, s.plateNo, "Van", 0, "Diesel", s.kmPerLiter)
+    }
+}
+
+/** Live position of one vehicle, in live/{vehicleId}. */
 data class LiveStatus(
+    val vehicleId: String = "",
+    val vehicleName: String = "",
     val lat: Double = 0.0,
     val lng: Double = 0.0,
     val speedKmh: Double = 0.0,
+    /** Direction of travel, degrees clockwise from north – rotates the car icon. */
+    val bearing: Float = 0f,
     val updatedAt: Long = 0,
     val mode: String = "OFFLINE",
     val tripId: String = "",
@@ -433,11 +485,15 @@ data class LiveStatus(
     val battery: Int = -1,
     val charging: Boolean = false,
 ) {
+    val onTrip get() = mode == "TRIP" || mode == "UNAUTHORIZED"
+
     companion object {
         fun from(d: DocumentSnapshot?): LiveStatus {
             if (d == null || !d.exists()) return LiveStatus()
             return LiveStatus(
+                vehicleId = d.id, vehicleName = d.str("vehicleName"),
                 lat = d.dbl("lat"), lng = d.dbl("lng"), speedKmh = d.dbl("speedKmh"),
+                bearing = d.dbl("bearing").toFloat(),
                 updatedAt = d.long("updatedAt"), mode = d.getString("mode") ?: "OFFLINE",
                 tripId = d.str("tripId"), tripTitle = d.str("tripTitle"), driverName = d.str("driverName"),
                 driverUid = d.str("driverUid"),

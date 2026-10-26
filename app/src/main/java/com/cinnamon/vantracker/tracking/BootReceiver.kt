@@ -29,8 +29,8 @@ object DevicePrefs {
     fun setDriverPhone(ctx: Context, value: Boolean) { p(ctx).edit().putBoolean("driverPhone", value).apply() }
 
     /**
-     * Dedicated van phone (stays in the van, always guarding) vs. the driver's own phone
-     * (tracks only while on duty and connected to the van, or during a trip).
+     * Dedicated vehicle phone (stays in one vehicle, always guarding) vs. the driver's own
+     * phone (location recorded only during a ride).
      */
     fun isDedicated(ctx: Context) = p(ctx).getBoolean("dedicated", false)
     fun setDedicated(ctx: Context, value: Boolean) { p(ctx).edit().putBoolean("dedicated", value).apply() }
@@ -38,6 +38,14 @@ object DevicePrefs {
     /** Local copy of the driver's duty status, so tracking can resume after a reboot offline. */
     fun isOnDuty(ctx: Context) = p(ctx).getBoolean("onDuty", false)
     fun setOnDuty(ctx: Context, value: Boolean) { p(ctx).edit().putBoolean("onDuty", value).apply() }
+
+    /** Vehicle a dedicated phone is installed in. */
+    fun dedicatedVehicleId(ctx: Context) = p(ctx).getString("dedicatedVehicle", "") ?: ""
+    fun setDedicatedVehicleId(ctx: Context, id: String) { p(ctx).edit().putString("dedicatedVehicle", id).apply() }
+
+    /** Vehicle this driver used last – preselected when starting a ride. */
+    fun lastVehicleId(ctx: Context) = p(ctx).getString("lastVehicle", "") ?: ""
+    fun setLastVehicleId(ctx: Context, id: String) { p(ctx).edit().putString("lastVehicle", id).apply() }
 
     fun getLong(ctx: Context, key: String) = p(ctx).getLong(key, 0L)
     fun putLong(ctx: Context, key: String, v: Long) { p(ctx).edit().putLong(key, v).apply() }

@@ -94,6 +94,7 @@ sealed interface Screen {
     data object Approvals : Screen
     data object MyRequests : Screen
     data object Trips : Screen
+    data object Vehicles : Screen
 }
 
 class Nav {
@@ -207,6 +208,7 @@ private fun ScreenHost(s: Session) {
         Screen.Approvals -> ApprovalsScreen(s)
         Screen.MyRequests -> MyRequestsScreen(s)
         Screen.Trips -> TripsScreen(s)
+        Screen.Vehicles -> VehiclesScreen(s)
     }
 }
 

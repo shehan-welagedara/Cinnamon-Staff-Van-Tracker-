@@ -104,7 +104,7 @@ fun StaffHome(s: Session) {
     val tab = s.nav.homeTab.coerceIn(0, tabs.lastIndex)
     val label = tabs[tab].label
     Scaffold(
-        topBar = { AppBar(if (label == "Home") s.settings.vehicleName else label) },
+        topBar = { AppBar(if (label == "Home") "Transport" else label) },
         bottomBar = {
             // iOS-style tab bar: hairline on top, tinted icon, no pill indicator.
             Column {
@@ -151,7 +151,7 @@ fun StaffHome(s: Session) {
 }
 
 private fun LazyListScope.homeTab(s: Session, pendingCount: Int, openAlerts: Int) {
-    item { LiveVanCard(s) }
+    item { FleetCard(s) }
     if (s.canApprove && (pendingCount > 0 || openAlerts > 0)) item {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             if (pendingCount > 0) Button(onClick = { s.nav.homeTab = 1 }, modifier = Modifier.weight(1f)) { Text("$pendingCount to approve") }
@@ -204,29 +204,6 @@ private fun DriversCard() {
                 Chip(status, color)
             }
             if (i < drivers.lastIndex) Box(Modifier.padding(start = 16.dp).fillMaxWidth().height(0.5.dp).background(Separator))
-        }
-    }
-}
-
-@Composable
-private fun LiveVanCard(s: Session) {
-    val live by remember { Repo.liveFlow() }.collectAsState(initial = null)
-    val l = live
-    SectionCard("Van now", onClick = { s.nav.go(Screen.LiveMap) }) {
-        if (l == null || l.updatedAt == 0L) {
-            Text("No position yet – shown once a driver is in the van or on a trip.", color = TextSecondary)
-        } else {
-            val (text, color) = when (l.mode) {
-                "TRIP" -> "On trip: ${l.tripTitle}" to OkGreen
-                "UNAUTHORIZED" -> "Moving WITHOUT approval" to DangerRed
-                else -> "Parked / idle" to InfoBlue
-            }
-            Chip(text, color)
-            Spacer(Modifier.height(6.dp))
-            VanMap(Modifier.fillMaxWidth().height(160.dp), pins = listOf(MapPin(l.lat, l.lng, "Van")), fitKey = "live")
-            InfoRow("Speed", "${l.speedKmh.toInt()} km/h")
-            InfoRow("Last update", TripCalc.dateTime(l.updatedAt))
-            if (l.driverName.isNotBlank()) InfoRow("Driver", l.driverName)
         }
     }
 }
@@ -470,6 +447,10 @@ private fun ApprovalItem(s: Session, r: TripRequest) {
     var driverUid by remember(d) { mutableStateOf("") }
     val anyDriver = "Any driver (first to accept)"
     val driverOptions = listOf(anyDriver) + drivers.map { it.name + if (it.onDuty) " · on duty" else " · off duty" }
+    val vehicles = rememberVehicles(s)
+    var vehicleId by remember(d) { mutableStateOf("") }
+    val anyVehicle = "Driver chooses when starting"
+    val vehicleOptions = listOf(anyVehicle) + vehicles.map { it.label }
     AlertDialog(
         onDismissRequest = { dialog = null },
         title = { Text(if (d) "Approve request" else "Reject request") },
@@ -486,6 +467,11 @@ private fun ApprovalItem(s: Session, r: TripRequest) {
                         val i = driverOptions.indexOf(l)
                         driverUid = if (i <= 0) "" else drivers[i - 1].uid
                     }
+                    if (vehicles.size > 1) {
+                        Picker("Vehicle", vehicles.firstOrNull { it.id == vehicleId }?.label ?: anyVehicle, vehicleOptions) { l ->
+                            vehicleId = vehicles.firstOrNull { it.label == l }?.id ?: ""
+                        }
+                    }
                 }
                 OutlinedTextField(comment, { comment = it }, label = { Text(if (d) "Comment (optional)" else "Reason for rejection") }, modifier = Modifier.fillMaxWidth())
             }
@@ -494,7 +480,8 @@ private fun ApprovalItem(s: Session, r: TripRequest) {
             Button(enabled = d || comment.isNotBlank(), onClick = {
                 val me = s.me
                 val driver = drivers.firstOrNull { it.uid == driverUid }.takeIf { target.isBlank() }
-                if (d) AppScope.launch { Repo.approveRequest(r, me, comment.trim(), target.ifBlank { null }, schedules, driver) }
+                val vehicle = vehicles.firstOrNull { it.id == vehicleId }.takeIf { target.isBlank() }
+                if (d) AppScope.launch { Repo.approveRequest(r, me, comment.trim(), target.ifBlank { null }, schedules, driver, vehicle) }
                 else Repo.rejectRequest(r, me, comment.trim())
                 dialog = null
             }) { Text(if (d) "Approve" else "Reject") }
@@ -557,6 +544,7 @@ fun TripDetailScreen(s: Session, id: String) {
     val requests by remember(id) { Repo.requestsForTripFlow(id) }.collectAsState(initial = emptyList())
     var points by remember { mutableStateOf<List<TrackPoint>>(emptyList()) }
     val t = trip
+    val vehicles = rememberVehicles(s, includeInactive = true)
     LaunchedEffect(id, t?.status) {
         points = Repo.trackPoints(id)
         while (t?.status == TripStatus.IN_PROGRESS) { delay(30_000); points = Repo.trackPoints(id) }
@@ -569,6 +557,8 @@ fun TripDetailScreen(s: Session, id: String) {
                 path = points,
                 pins = t.stops.filter { it.lat != null && it.lng != null }.map { MapPin(it.lat!!, it.lng!!, it.name) },
                 fitKey = "$id-${points.size}",
+                follow = t.status == TripStatus.IN_PROGRESS,
+                vehicleTitle = t.vehicleName.ifBlank { "Vehicle" },
             )
             TripCard(t, s)
             SectionCard("Time & cost") {
@@ -587,7 +577,8 @@ fun TripDetailScreen(s: Session, id: String) {
                     Text("Cost share per department: ${TripCalc.money(t.fuelCost / t.departments.size, s.settings.currency)}", fontSize = 13.sp)
                 }
                 if (s.me.isAdmin && t.status == TripStatus.COMPLETED) {
-                    TextButton(onClick = { Repo.recalcTrip(t, s.settings, t.gpsDistanceKm) }) { Text("Recalculate with current fuel settings") }
+                    TextButton(onClick = { Repo.recalcTrip(t, s.settings, t.gpsDistanceKm,
+                        vehicles.firstOrNull { it.id == t.vehicleId.ifBlank { com.cinnamon.vantracker.data.Vehicle.DEFAULT_ID } }) }) { Text("Recalculate with current fuel settings") }
                 }
             }
             if (t.stops.isNotEmpty()) SectionCard("Stops") {
@@ -618,29 +609,49 @@ fun TripDetailScreen(s: Session, id: String) {
 
 @Composable
 fun LiveMapScreen(s: Session) {
-    val live by remember { Repo.liveFlow() }.collectAsState(initial = null)
+    val vehicles = rememberVehicles(s)
+    val live by remember { Repo.liveAllFlow() }.collectAsState(initial = emptyList())
+    val byId = live.associateBy { it.vehicleId }
+    // Follow one vehicle's route, or show the whole fleet.
+    var focus by remember { mutableStateOf("") }
+    val focused = byId[focus]
     var path by remember { mutableStateOf<List<TrackPoint>>(emptyList()) }
-    val l = live
-    LaunchedEffect(l?.tripId) {
-        val id = l?.tripId.orEmpty()
-        while (id.isNotBlank()) { path = Repo.trackPoints(id); delay(30_000) }
+    LaunchedEffect(focused?.tripId) {
+        val id = focused?.tripId.orEmpty()
         path = emptyList()
+        while (id.isNotBlank()) { path = Repo.trackPoints(id); delay(30_000) }
     }
-    Scaffold(topBar = { AppBar("Live van location", onBack = { s.nav.back() }) }) { pad ->
+    Scaffold(topBar = { AppBar("Live map", onBack = { s.nav.back() }) }) { pad ->
         Column(Modifier.padding(pad).fillMaxSize()) {
             val pins = buildList {
-                if (l != null && l.updatedAt > 0) add(MapPin(l.lat, l.lng, "Van"))
+                vehicles.forEach { v ->
+                    byId[v.id]?.let { l -> add(MapPin(l.lat, l.lng, v.label, vehicle = true, bearing = l.bearing, snippet = liveLabel(l))) }
+                }
                 if (s.settings.hotelSet) add(MapPin(s.settings.hotelLat, s.settings.hotelLng, s.settings.hotelName))
             }
-            VanMap(Modifier.fillMaxWidth().weight(1f), path = path, pins = pins, fitKey = "live-${l?.tripId}")
-            if (l != null) SectionCard {
-                InfoRow("Status", when (l.mode) { "TRIP" -> "On trip"; "UNAUTHORIZED" -> "Moving without approval"; "GUARD" -> "Parked"; else -> l.mode },
-                    if (l.mode == "UNAUTHORIZED") DangerRed else Color.Unspecified)
-                if (l.tripTitle.isNotBlank()) InfoRow("Trip", l.tripTitle)
-                InfoRow("Speed", "${l.speedKmh.toInt()} km/h")
-                InfoRow("Updated", if (l.updatedAt > 0) TripCalc.dateTime(l.updatedAt) else "never")
-                if (l.battery >= 0) InfoRow("Van phone battery", "${l.battery}%" + if (l.charging) " (charging)" else "")
-                if (l.tripId.isNotBlank()) TextButton(onClick = { s.nav.go(Screen.TripDetail(l.tripId)) }) { Text("Open trip") }
+            VanMap(
+                Modifier.fillMaxWidth().weight(1f),
+                path = if (focused != null) path else emptyList(),
+                pins = if (focused != null) pins.filter { !it.vehicle || it.title == vehicles.firstOrNull { v -> v.id == focus }?.label } else pins,
+                fitKey = "live-$focus-${pins.size}",
+            )
+            LazyColumn(Modifier.weight(0.8f)) {
+                item {
+                    Row(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        FilterChip(selected = focus.isBlank(), onClick = { focus = "" }, label = { Text("All vehicles") })
+                    }
+                }
+                items(vehicles, key = { it.id }) { v ->
+                    val l = byId[v.id]
+                    SectionCard(onClick = { focus = if (focus == v.id) "" else v.id }, accent = if (focus == v.id) Cinnamon else null) {
+                        FleetRow(v, l, last = true)
+                        if (l != null) {
+                            if (l.tripTitle.isNotBlank()) InfoRow("Ride", l.tripTitle)
+                            if (l.battery >= 0 && l.onTrip) InfoRow("Driver phone battery", "${l.battery}%" + if (l.charging) " (charging)" else "")
+                            if (l.tripId.isNotBlank()) TextButton(onClick = { s.nav.go(Screen.TripDetail(l.tripId)) }) { Text("Open ride") }
+                        }
+                    }
+                }
             }
         }
     }
@@ -696,7 +707,7 @@ private fun MoreBody(s: Session) {
     }
     SectionHeader("Van")
     GroupCard {
-        ListRow("🗺", "Live van location", last = !s.canApprove) { s.nav.go(Screen.LiveMap) }
+        ListRow("🗺", "Live map", last = !s.canApprove) { s.nav.go(Screen.LiveMap) }
         if (s.canApprove) {
             ListRow("📊", "Reports & costs") { s.nav.go(Screen.Reports) }
             ListRow("📝", "My own requests") { s.nav.go(Screen.MyRequests) }
@@ -706,7 +717,8 @@ private fun MoreBody(s: Session) {
     if (s.me.isAdmin) {
         SectionHeader("Administration")
         GroupCard {
-            ListRow("⚙️", "Van, fuel & tracking settings") { s.nav.go(Screen.AdminSettings) }
+            ListRow("🚐", "Vehicles") { s.nav.go(Screen.Vehicles) }
+            ListRow("⚙️", "Fuel, hotel & tracking settings") { s.nav.go(Screen.AdminSettings) }
             ListRow("👥", "Users & roles") { s.nav.go(Screen.Users) }
             ListRow("🔁", "Recurring schedules") { s.nav.go(Screen.Schedules) }
             ListRow("⛽", "Fuel fill-up log") { s.nav.go(Screen.FuelLogs) }
