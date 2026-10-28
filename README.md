@@ -26,6 +26,13 @@ Every push to `main` builds a new APK and publishes it under **Releases** (`VanT
 
 Accepting needs internet, so two drivers can't take the same trip. Everything else works offline. Managers see a **Drivers** card: on trip, on duty, or off duty, with tap-to-call. Reports break down distance, hours and trips **by driver**.
 
+**Scheduled runs (e.g. night transport to the staff accommodation)**
+
+- **Admin set-up:** under **More → Recurring schedules**, the administrator sets each run's days, time, **destination** and optional stops on the way. Places can be found by address search or by tapping the map.
+- **Booking a seat:** everyone sees **Today's scheduled runs** on their home screen and taps **Book my seat**. They enter the passenger name(s) and their own **drop-off point** (address search or map), and the seat is confirmed straight away because the run is pre-approved. Instant confirmation can be switched off under Settings.
+- **For the driver:** the run collects every passenger's drop-off point on the map and in the stop list, each with a **Navigate** button, and ends at the planned destination.
+- **Reports:** bookings are listed passenger by passenger, in the app's Reports and in the web dashboard.
+
 **Several vehicles and drivers**
 
 - **Vehicles:** the administrator adds each vehicle once under **More → Vehicles**: name, registration, type, seats, fuel (diesel or petrol) and km/L. Any number of vehicles and drivers can be added later.
@@ -74,9 +81,32 @@ Accepting needs internet, so two drivers can't take the same trip. Everything el
     - Notifications allowed
     - Battery optimisation ignored
 
+## Web dashboard (management)
+
+A browser dashboard for the GM, OM and administrators, published free with GitHub Pages:
+**https://shehan-welagedara.github.io/Cinnamon-Staff-Van-Tracker-/**
+
+It has these pages:
+
+- **Overview:** key figures (trips, km, time on road, fuel, cost, seats booked, unapproved, pending) and charts by day, department, vehicle and driver.
+- **Live fleet:** every vehicle as a car icon on the map.
+- **Trips:** filter by vehicle, driver, department, type and status. Open a trip to see the route, the stops and each stop's passengers. Export to CSV.
+- **Passengers:** every booking and request, filterable by passenger, department or run. Includes a per-passenger summary and a CSV export.
+- **Drivers:** on duty or off, trips, km, driving time, hours on duty, and the duty log.
+- **Approvals:** approve or reject requests.
+- **Alerts:** view and acknowledge them.
+
+One-time set-up:
+
+1. GitHub repo → **Settings → Pages → Build and deployment → Source: GitHub Actions.** Then **Actions → Deploy web dashboard → Run workflow**.
+2. Firebase console → **Project settings → Your apps → Add app → Web (</>)**. Register it, without Hosting, and copy the `firebaseConfig`.
+3. Open the dashboard and paste that config. It is saved in that browser only. To skip this step for everyone, add it as the GitHub secret `FIREBASE_WEB_CONFIG`, in JSON form, for example `{"apiKey":"…","authDomain":"…","projectId":"…","appId":"…"}`.
+4. Firebase console → **Authentication → Settings → Authorized domains → Add** `shehan-welagedara.github.io`.
+5. Sign in with a GM, OM or administrator account from the app.
+
 ## Firestore rules
 
-When an update adds data, it may need new rules. Whenever `firestore.rules` changes in this repo, copy it again into **Firebase console → Firestore Database → Rules → Publish**. Version 1.0.6+ needs this for driver duty logs; 1.0.7+ for vehicles and the live fleet map.
+When an update adds data, it may need new rules. Whenever `firestore.rules` changes in this repo, copy it again into **Firebase console → Firestore Database → Rules → Publish**. Version 1.0.6+ needs this for driver duty logs; 1.0.7+ for vehicles and the live fleet map; 1.0.8+ for booking seats on scheduled runs.
 
 ## Updating the app (keeps all data)
 
@@ -117,7 +147,7 @@ These links open the right page for the Firebase project `cinnamon-staff-van-tra
 - Firebase Auth and Cloud Firestore, with an offline persistent cache
 - Fused location in a foreground service; WorkManager for notifications checked every 15 minutes (no paid push server)
 - osmdroid (OpenStreetMap), or Google Maps Compose when a key is set
-- Design: Kandy Myst by Cinnamon brand kit v1.0 (Cinnamon Purple palette); font Figtree (SIL Open Font License), the kit's digital substitute for Proxima Nova
+- Design: “liquid glass” (frosted, blurred bars via [Haze](https://github.com/chrisbanes/haze)) in the Kandy Myst by Cinnamon brand kit v1.0 (Cinnamon Purple palette); font Figtree (SIL Open Font License), the kit's digital substitute for Proxima Nova
 
 ## Build locally
 

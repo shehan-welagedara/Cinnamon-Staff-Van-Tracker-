@@ -92,7 +92,12 @@ data class Stop(
         "department" to department, "arrivedAt" to arrivedAt,
     )
 
+    val hasLocation get() = lat != null && lng != null
+
     companion object {
+        @Suppress("UNCHECKED_CAST")
+        fun from(raw: Any?): Stop? = listFrom(listOfNotNull(raw)).firstOrNull()?.takeIf { it.name.isNotBlank() || it.hasLocation }
+
         @Suppress("UNCHECKED_CAST")
         fun listFrom(raw: Any?): List<Stop> = (raw as? List<Any?>).orEmpty().mapNotNull { item ->
             val m = item as? Map<String, Any?> ?: return@mapNotNull null
@@ -140,14 +145,18 @@ data class TripRequest(
     /** Driver who accepted (or was assigned) the trip carrying this request. */
     val driverName: String = "",
     val acceptedAt: Long? = null,
+    /** Who is actually travelling (may differ from the requester). */
+    val passengerNames: String = "",
 ) {
+    val travellers get() = passengerNames.ifBlank { requesterName }
+
     fun toMap(): Map<String, Any?> = mapOf(
         "requesterUid" to requesterUid, "requesterName" to requesterName, "department" to department,
         "category" to category, "purpose" to purpose, "stops" to stops.map { it.toMap() },
         "requestedTime" to requestedTime, "passengers" to passengers, "notes" to notes,
         "status" to status.name, "joinTarget" to joinTarget, "joinTargetLabel" to joinTargetLabel,
         "approverName" to approverName, "decidedAt" to decidedAt, "decisionComment" to decisionComment,
-        "tripId" to tripId, "createdAt" to createdAt,
+        "tripId" to tripId, "createdAt" to createdAt, "passengerNames" to passengerNames,
     )
 
     companion object {
@@ -172,6 +181,7 @@ data class TripRequest(
             createdAt = d.long("createdAt"),
             driverName = d.str("driverName"),
             acceptedAt = d.getLong("acceptedAt"),
+            passengerNames = d.str("passengerNames"),
         )
     }
 }
@@ -235,6 +245,8 @@ data class Trip(
     val assignedAt: Long? = null,
     val vehicleId: String = "",
     val vehicleName: String = "",
+    /** Final destination of a scheduled run (e.g. staff accommodation). */
+    val destination: Stop? = null,
 ) {
     val isActive get() = status == TripStatus.IN_PROGRESS
     val isOpen get() = status == TripStatus.READY || status == TripStatus.ASSIGNED
@@ -259,6 +271,7 @@ data class Trip(
             assignedAt = d.getLong("assignedAt"),
             vehicleId = d.str("vehicleId"),
             vehicleName = d.str("vehicleName"),
+            destination = Stop.from(d.get("destination")),
             startTime = d.getLong("startTime"),
             endTime = d.getLong("endTime"),
             distanceKm = d.dbl("distanceKm"),
@@ -292,10 +305,13 @@ data class Schedule(
     val days: List<Int> = emptyList(),
     val time: String = "08:00",
     val active: Boolean = true,
+    /** Where the run ends, e.g. Staff Accommodation. Passengers' own drop-offs are added as stops. */
+    val destination: Stop? = null,
 ) {
     fun toMap(): Map<String, Any?> = mapOf(
         "title" to title, "category" to category, "purpose" to purpose, "department" to department,
         "stops" to stops.map { it.toMap() }, "days" to days, "time" to time, "active" to active,
+        "destination" to destination?.toMap(),
     )
 
     companion object {
@@ -309,6 +325,7 @@ data class Schedule(
             days = (d.get("days") as? List<*>).orEmpty().mapNotNull { (it as? Number)?.toInt() },
             time = d.getString("time") ?: "08:00",
             active = d.getBoolean("active") ?: true,
+            destination = Stop.from(d.get("destination")),
         )
     }
 }
@@ -388,6 +405,8 @@ data class AppSettings(
     /** Hour of the day (0-23) by which unauthorized movement reasons must be entered. */
     val reasonDeadlineHour: Int = 22,
     val autoEndUnauthorizedMin: Int = 5,
+    /** Seats on pre-approved scheduled runs are confirmed instantly (no GM/OM approval). */
+    val autoApproveScheduled: Boolean = true,
 ) {
     val hotelSet get() = hotelLat != 0.0 || hotelLng != 0.0
 
@@ -401,6 +420,7 @@ data class AppSettings(
         "movementSpeedKmh" to movementSpeedKmh, "minGpsAccuracyM" to minGpsAccuracyM,
         "usePowerTrigger" to usePowerTrigger,
         "reasonDeadlineHour" to reasonDeadlineHour, "autoEndUnauthorizedMin" to autoEndUnauthorizedMin,
+        "autoApproveScheduled" to autoApproveScheduled,
     )
 
     companion object {
@@ -424,6 +444,7 @@ data class AppSettings(
                 usePowerTrigger = d.getBoolean("usePowerTrigger") ?: true,
                 reasonDeadlineHour = d.getLong("reasonDeadlineHour")?.toInt() ?: def.reasonDeadlineHour,
                 autoEndUnauthorizedMin = d.getLong("autoEndUnauthorizedMin")?.toInt() ?: def.autoEndUnauthorizedMin,
+                autoApproveScheduled = d.getBoolean("autoApproveScheduled") ?: true,
             )
         }
     }

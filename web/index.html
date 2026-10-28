@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Van Tracker · Management Dashboard</title>
+  <meta name="description" content="Kandy Myst by Cinnamon – staff transport dashboard: live fleet, trips, passengers, drivers and costs.">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="config.js"></script>
+</head>
+<body>
+  <div class="backdrop" aria-hidden="true"><i></i><i></i><i></i></div>
+
+  <!-- Setup: connect to the hotel's Firebase project -->
+  <section id="setup" class="screen center" hidden>
+    <div class="glass card narrow">
+      <p class="eyebrow">Kandy Myst by Cinnamon</p>
+      <h1>Connect the dashboard</h1>
+      <p class="muted">Paste the <b>firebaseConfig</b> of a <b>Web app</b> from Firebase console → Project settings → Your apps → Add app → Web. It is saved in this browser only.</p>
+      <textarea id="setupText" rows="9" placeholder="const firebaseConfig = { apiKey: &quot;…&quot;, authDomain: &quot;…&quot;, projectId: &quot;…&quot;, … };"></textarea>
+      <p id="setupError" class="error"></p>
+      <button id="setupBtn" class="btn primary">Connect</button>
+    </div>
+  </section>
+
+  <!-- Sign in -->
+  <section id="login" class="screen center" hidden>
+    <div class="glass card narrow hero">
+      <div class="hero-band">
+        <p class="eyebrow light">Kandy Myst by Cinnamon</p>
+        <h1 class="light">Van Tracker</h1>
+        <p class="light dim">Management dashboard</p>
+      </div>
+      <form id="loginForm">
+        <label>Email<input id="email" type="email" autocomplete="username" required></label>
+        <label>Password<input id="password" type="password" autocomplete="current-password" required></label>
+        <p id="loginError" class="error"></p>
+        <button class="btn primary" type="submit">Sign in</button>
+      </form>
+      <button id="resetConfig" class="btn link">Change Firebase connection</button>
+    </div>
+  </section>
+
+  <!-- Dashboard -->
+  <section id="app" class="screen" hidden>
+    <aside class="sidebar glass">
+      <div class="brand">
+        <div class="logo-dot">🚐</div>
+        <div><p class="eyebrow">Kandy Myst by Cinnamon</p><b>Van Tracker</b></div>
+      </div>
+      <nav id="nav">
+        <a href="#overview" data-view="overview">📊 Overview</a>
+        <a href="#live" data-view="live">🗺 Live fleet</a>
+        <a href="#trips" data-view="trips">🧭 Trips</a>
+        <a href="#passengers" data-view="passengers">🧑‍🤝‍🧑 Passengers</a>
+        <a href="#drivers" data-view="drivers">👤 Drivers</a>
+        <a href="#approvals" data-view="approvals">✅ Approvals <span id="pendingBadge" class="badge" hidden></span></a>
+        <a href="#alerts" data-view="alerts">⚠️ Alerts <span id="alertBadge" class="badge" hidden></span></a>
+      </nav>
+      <div class="sidebar-foot">
+        <div class="seg" id="themeSeg">
+          <button data-theme="system">Auto</button><button data-theme="light">Light</button><button data-theme="dark">Dark</button>
+        </div>
+        <p class="muted small" id="whoami"></p>
+        <button id="logout" class="btn ghost">Sign out</button>
+      </div>
+    </aside>
+
+    <main>
+      <header class="topbar glass">
+        <div>
+          <p class="eyebrow" id="viewEyebrow">Overview</p>
+          <h2 id="viewTitle">This month</h2>
+        </div>
+        <div class="range">
+          <select id="rangePreset">
+            <option value="today">Today</option>
+            <option value="7">Last 7 days</option>
+            <option value="month" selected>This month</option>
+            <option value="lastmonth">Last month</option>
+            <option value="90">Last 90 days</option>
+            <option value="custom">Custom…</option>
+          </select>
+          <input type="date" id="rangeFrom" hidden>
+          <input type="date" id="rangeTo" hidden>
+        </div>
+      </header>
+
+      <div id="view-overview" class="view">
+        <div class="kpis" id="kpis"></div>
+        <div class="grid2">
+          <div class="glass card"><h3>Distance per day (km)</h3><canvas id="chartDaily" height="140"></canvas></div>
+          <div class="glass card"><h3>Fuel cost by department</h3><canvas id="chartDept" height="140"></canvas></div>
+          <div class="glass card"><h3>Distance by vehicle (km)</h3><canvas id="chartVehicle" height="140"></canvas></div>
+          <div class="glass card"><h3>Trips by driver</h3><canvas id="chartDriver" height="140"></canvas></div>
+        </div>
+        <div class="glass card"><h3>Latest trips</h3><div id="recentTrips"></div></div>
+      </div>
+
+      <div id="view-live" class="view" hidden>
+        <div class="glass card map-card"><div id="liveMap" class="map tall"></div></div>
+        <div id="liveList" class="cards"></div>
+      </div>
+
+      <div id="view-trips" class="view" hidden>
+        <div class="glass card filters">
+          <input id="tripSearch" placeholder="Search title, stop, passenger…">
+          <select id="fVehicle"><option value="">All vehicles</option></select>
+          <select id="fDriver"><option value="">All drivers</option></select>
+          <select id="fDept"><option value="">All departments</option></select>
+          <select id="fType"><option value="">All types</option><option value="REQUEST">Requests</option><option value="SCHEDULED">Scheduled runs</option><option value="UNAUTHORIZED">Unapproved</option></select>
+          <select id="fStatus"><option value="">All statuses</option><option>COMPLETED</option><option>IN_PROGRESS</option><option>ASSIGNED</option><option>READY</option><option>CANCELLED</option></select>
+          <button id="tripsCsv" class="btn ghost">⬇ CSV</button>
+        </div>
+        <div class="glass card"><div id="tripsSummary" class="summary"></div><div id="tripsTable" class="table-wrap"></div></div>
+      </div>
+
+      <div id="view-passengers" class="view" hidden>
+        <div class="glass card filters">
+          <input id="paxSearch" placeholder="Passenger, requester, drop-off…">
+          <select id="paxDept"><option value="">All departments</option></select>
+          <select id="paxRun"><option value="">All runs & requests</option></select>
+          <label class="check"><input type="checkbox" id="paxIncludeCancelled"> include cancelled / rejected</label>
+          <button id="paxCsv" class="btn ghost">⬇ CSV</button>
+        </div>
+        <div class="grid2">
+          <div class="glass card"><h3>Per passenger</h3><div id="paxSummary" class="table-wrap"></div></div>
+          <div class="glass card"><h3>Seats per day</h3><canvas id="chartPax" height="160"></canvas></div>
+        </div>
+        <div class="glass card"><h3>All bookings & requests</h3><div id="paxTable" class="table-wrap"></div></div>
+      </div>
+
+      <div id="view-drivers" class="view" hidden>
+        <div id="driverCards" class="cards"></div>
+        <div class="glass card"><h3>Duty log</h3><div id="dutyTable" class="table-wrap"></div></div>
+      </div>
+
+      <div id="view-approvals" class="view" hidden>
+        <div id="approvalList" class="cards"></div>
+      </div>
+
+      <div id="view-alerts" class="view" hidden>
+        <div id="alertList" class="cards"></div>
+      </div>
+    </main>
+  </section>
+
+  <!-- Trip detail -->
+  <dialog id="tripDialog" class="glass">
+    <div class="dialog-head"><h3 id="tdTitle">Trip</h3><button class="btn ghost" id="tdClose">✕</button></div>
+    <div id="tdMap" class="map"></div>
+    <div id="tdBody"></div>
+  </dialog>
+
+  <script type="module" src="app.js"></script>
+  <script>
+    // If the Firebase / map libraries can't load (no internet, blocked CDN) say so instead of a blank page.
+    setTimeout(function () {
+      if (window.__vtReady) return;
+      var d = document.createElement("div");
+      d.className = "glass card narrow"; d.style.cssText = "margin:15vh auto;text-align:center";
+      d.innerHTML = "<h3>Couldn't load the dashboard</h3><p class='muted'>Check the internet connection and reload. The dashboard needs gstatic.com, unpkg.com and jsdelivr.net.</p>";
+      document.body.appendChild(d);
+    }, 12000);
+  </script>
+</body>
+</html>

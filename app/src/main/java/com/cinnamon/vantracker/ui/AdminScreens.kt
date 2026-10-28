@@ -28,6 +28,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -36,6 +37,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -102,6 +104,7 @@ fun AdminSettingsScreen(s: Session) {
     var speed by remember { mutableStateOf(cur.movementSpeedKmh.toInt().toString()) }
     var accuracy by remember { mutableStateOf(cur.minGpsAccuracyM.toInt().toString()) }
     var power by remember { mutableStateOf(cur.usePowerTrigger) }
+    var autoRuns by remember { mutableStateOf(cur.autoApproveScheduled) }
     var deadline by remember { mutableStateOf(cur.reasonDeadlineHour.toString()) }
     var autoEnd by remember { mutableStateOf(cur.autoEndUnauthorizedMin.toString()) }
     var msg by remember { mutableStateOf("") }
@@ -150,6 +153,11 @@ fun AdminSettingsScreen(s: Session) {
             }
             OutlinedTextField(radius, { radius = it }, label = { Text("Hotel geofence radius (m)") }, keyboardOptions = num, modifier = Modifier.fillMaxWidth())
 
+            SectionHeader("Scheduled runs")
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Confirm seats on scheduled runs instantly (no GM/OM approval)", modifier = Modifier.weight(1f)); Switch(autoRuns, { autoRuns = it })
+            }
+
             SectionHeader("Dedicated vehicle phones (optional)")
             Text(
                 "Drivers' own phones record only rides they start. To also catch driving without an approved ride, " +
@@ -176,7 +184,7 @@ fun AdminSettingsScreen(s: Session) {
                     geofenceRadiusM = radius.toDoubleOrNull() ?: cur.geofenceRadiusM,
                     movementSpeedKmh = speed.toDoubleOrNull() ?: cur.movementSpeedKmh,
                     minGpsAccuracyM = accuracy.toDoubleOrNull() ?: cur.minGpsAccuracyM,
-                    usePowerTrigger = power,
+                    usePowerTrigger = power, autoApproveScheduled = autoRuns,
                     reasonDeadlineHour = (deadline.toIntOrNull() ?: cur.reasonDeadlineHour).coerceIn(0, 23),
                     autoEndUnauthorizedMin = (autoEnd.toIntOrNull() ?: cur.autoEndUnauthorizedMin).coerceIn(1, 120),
                 )
@@ -274,7 +282,8 @@ fun SchedulesScreen(s: Session) {
     ) { pad ->
         LazyColumn(Modifier.padding(pad)) {
             item {
-                Text("Pre-approved daily runs (staff transport, laundry pickup…). The driver can start them without waiting for GM/OM approval.",
+                Text("Pre-approved runs (night transport to the staff accommodation, laundry pickup…). Staff book a seat with their own " +
+                    "drop-off point; seats are confirmed instantly and drivers start the run without waiting for GM/OM approval.",
                     modifier = Modifier.padding(16.dp), color = TextSecondary)
             }
             if (list.isEmpty()) item { Empty("No schedules yet. Tap + to add one.") }
@@ -282,7 +291,8 @@ fun SchedulesScreen(s: Session) {
                 SectionCard("${sc.time} · ${sc.title}", onClick = { edit = sc }, accent = if (sc.active) InfoBlue else TextSecondary) {
                     Text(sc.days.sorted().joinToString(" ") { DAY_NAMES[(it - 1).coerceIn(0, 6)] }, fontSize = 13.sp)
                     Text("${sc.category} · ${sc.department}", fontSize = 13.sp, color = TextSecondary)
-                    if (sc.stops.isNotEmpty()) Text("Stops: " + sc.stops.joinToString(" → ") { it.name }, fontSize = 13.sp)
+                    sc.destination?.let { Text("Destination: ${it.name}" + if (it.hasLocation) " 📍" else "", fontSize = 13.sp) }
+                    if (sc.stops.isNotEmpty()) Text("Via: " + sc.stops.joinToString(" → ") { it.name }, fontSize = 13.sp)
                     if (!sc.active) Text("Paused", color = WarnOrange)
                 }
             }
@@ -294,7 +304,9 @@ fun SchedulesScreen(s: Session) {
         var category by remember(sc) { mutableStateOf(sc.category.ifBlank { CATEGORIES[2] }) }
         var purpose by remember(sc) { mutableStateOf(sc.purpose) }
         var dept by remember(sc) { mutableStateOf(sc.department.ifBlank { DEPARTMENTS.first() }) }
-        var stops by remember(sc) { mutableStateOf(sc.stops.joinToString(", ") { it.name }) }
+        val stops = remember(sc) { mutableStateListOf<Stop>().apply { addAll(sc.stops.ifEmpty { listOf(Stop()) }) } }
+        var destination by remember(sc) { mutableStateOf(sc.destination ?: Stop(name = "Staff Accommodation")) }
+        var pickDest by remember(sc) { mutableStateOf(false) }
         val days = remember(sc) { mutableStateListOf<Int>().apply { addAll(sc.days) } }
         var time by remember(sc) { mutableStateOf(sc.time) }
         var active by remember(sc) { mutableStateOf(sc.active) }
@@ -307,7 +319,17 @@ fun SchedulesScreen(s: Session) {
                     Picker("Category", category, CATEGORIES) { category = it }
                     Picker("Department", dept, DEPARTMENTS) { dept = it }
                     OutlinedTextField(purpose, { purpose = it }, label = { Text("Purpose") }, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(stops, { stops = it }, label = { Text("Stops (comma separated)") }, modifier = Modifier.fillMaxWidth())
+                    SectionHeader("Destination")
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(destination.name, { destination = destination.copy(name = it) }, label = { Text("e.g. Staff Accommodation") },
+                            modifier = Modifier.weight(1f))
+                        IconButton(onClick = { pickDest = true }) {
+                            Icon(Icons.Filled.Place, "Pick on map", tint = if (destination.hasLocation) OkGreen else Cinnamon)
+                        }
+                    }
+                    if (destination.hasLocation) Text("📍 Location set on map", color = OkGreen, fontSize = 12.sp)
+                    SectionHeader("Stops on the way (optional)")
+                    StopsEditor(stops, s, label = { "Stop ${it + 1}" })
                     OutlinedButton(onClick = { pickTime(ctx, time) { time = it } }) { Text("Time: $time") }
                     Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                         DAY_NAMES.forEachIndexed { i, n ->
@@ -325,8 +347,9 @@ fun SchedulesScreen(s: Session) {
                     Repo.saveSchedule(
                         sc.copy(
                             title = title.trim(), category = category, purpose = purpose.trim(), department = dept,
-                            stops = stops.split(",").map { it.trim() }.filter { it.isNotEmpty() }.map { Stop(name = it, department = dept) },
+                            stops = stops.filter { it.name.isNotBlank() }.map { it.copy(department = dept) },
                             days = days.sorted(), time = time, active = active,
+                            destination = destination.takeIf { it.name.isNotBlank() }?.copy(department = dept),
                         )
                     )
                     edit = null
@@ -334,6 +357,13 @@ fun SchedulesScreen(s: Session) {
             },
             dismissButton = { TextButton(onClick = { edit = null }) { Text("Cancel") } },
         )
+        if (pickDest) LocationPickerDialog(
+            title = "Run destination",
+            initialName = destination.name,
+            initial = if (destination.hasLocation) Place(destination.name, destination.lat!!, destination.lng!!) else null,
+            s = s,
+            onDismiss = { pickDest = false },
+        ) { p -> destination = destination.copy(name = p.name, lat = p.lat, lng = p.lng); pickDest = false }
     }
 }
 
@@ -456,8 +486,48 @@ fun ReportsScreen(s: Session) {
                 BreakdownCard("Hours on the road by driver", byDriver.mapValues { e -> e.value.sumOf { it.durationMin } / 60.0 }, "")
                 BreakdownCard("Trips by driver", byDriver.mapValues { e -> e.value.size.toDouble() }, "")
             }
+            item { PassengerReport(s, month, next) }
             item { SectionHeader("Trips") }
             items(trips, key = { it.id }) { t -> TripCard(t, s, onClick = { s.nav.go(Screen.TripDetail(t.id)) }) }
+        }
+    }
+}
+
+/** Who travelled: every booking/request in the month, searchable by passenger, department or run. */
+@Composable
+private fun PassengerReport(s: Session, from: Long, to: Long) {
+    val all by remember(from) { Repo.requestsSinceFlow(from) }.collectAsState(initial = emptyList())
+    var query by remember { mutableStateOf("") }
+    val rows = all.filter {
+        it.requestedTime < to && it.status != com.cinnamon.vantracker.data.RequestStatus.REJECTED &&
+            it.status != com.cinnamon.vantracker.data.RequestStatus.CANCELLED
+    }
+    val q = query.trim().lowercase()
+    val shown = if (q.isEmpty()) rows else rows.filter {
+        listOf(it.travellers, it.requesterName, it.department, it.joinTargetLabel, it.category, it.stops.joinToString { st -> st.name })
+            .any { f -> f.lowercase().contains(q) }
+    }
+    // Trips per passenger (names separated by commas count individually).
+    val perPassenger = shown.flatMap { r -> r.travellers.split(",", "&", "/").map { it.trim() }.filter { it.isNotEmpty() } }
+        .groupingBy { it }.eachCount().mapValues { it.value.toDouble() }
+    SectionHeader("Passengers")
+    SectionCard {
+        OutlinedTextField(query, { query = it }, label = { Text("Filter by passenger, department or run") }, singleLine = true,
+            modifier = Modifier.fillMaxWidth())
+        InfoRow("Bookings / requests", shown.size.toString())
+        InfoRow("Seats", shown.sumOf { it.passengers }.toString())
+    }
+    BreakdownCard("Trips per passenger", perPassenger, "")
+    shown.take(100).forEach { r ->
+        SectionCard {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(r.travellers, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                Chip(r.status.label, if (r.status == com.cinnamon.vantracker.data.RequestStatus.COMPLETED) OkGreen else InfoBlue)
+            }
+            Text("${TripCalc.dateTime(r.requestedTime)} · ${r.joinTargetLabel.ifBlank { r.category }} · ${r.department}",
+                color = TextSecondary, fontSize = 13.sp)
+            if (r.stops.isNotEmpty()) Text("Drop-off: " + r.stops.joinToString(" → ") { it.name }, fontSize = 13.sp)
+            if (r.driverName.isNotBlank()) Text("Driver: ${r.driverName}", color = TextSecondary, fontSize = 13.sp)
         }
     }
 }

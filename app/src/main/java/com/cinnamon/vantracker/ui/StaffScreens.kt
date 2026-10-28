@@ -86,55 +86,34 @@ import kotlin.math.abs
 
 // ------------------------------------------------------------------ home with tabs
 
-private data class Tab(val label: String, val icon: ImageVector, val badge: Int = 0)
-
 @Composable
 fun StaffHome(s: Session) {
     val pending by remember { Repo.pendingRequestsFlow() }.collectAsState(initial = emptyList())
     val alerts by remember { Repo.alertsFlow() }.collectAsState(initial = emptyList())
     val openAlerts = alerts.count { !it.acknowledged }
     val tabs = if (s.canApprove) listOf(
-        Tab("Home", Icons.Filled.Home), Tab("Approvals", Icons.Filled.CheckCircle, pending.size),
-        Tab("Trips", Icons.Filled.List), Tab("Alerts", Icons.Filled.Notifications, openAlerts), Tab("More", Icons.Filled.Menu),
+        GlassTab("Home", Icons.Filled.Home), GlassTab("Approvals", Icons.Filled.CheckCircle, pending.size),
+        GlassTab("Trips", Icons.Filled.List), GlassTab("Alerts", Icons.Filled.Notifications, openAlerts), GlassTab("More", Icons.Filled.Menu),
     ) else listOf(
-        Tab("Home", Icons.Filled.Home), Tab("My requests", Icons.Filled.CheckCircle),
-        Tab("Trips", Icons.Filled.List), Tab("More", Icons.Filled.Menu),
+        GlassTab("Home", Icons.Filled.Home), GlassTab("My requests", Icons.Filled.CheckCircle),
+        GlassTab("Trips", Icons.Filled.List), GlassTab("More", Icons.Filled.Menu),
     )
     val online = rememberOnline()
     val tab = s.nav.homeTab.coerceIn(0, tabs.lastIndex)
     val label = tabs[tab].label
-    Scaffold(
+    GlassScaffold(
         topBar = { AppBar(if (label == "Home") "Transport" else label) },
-        bottomBar = {
-            // iOS-style tab bar: hairline on top, tinted icon, no pill indicator.
-            Column {
-            Box(Modifier.fillMaxWidth().height(0.5.dp).background(Separator))
-            NavigationBar(containerColor = CardColor, tonalElevation = 0.dp) {
-                tabs.forEachIndexed { i, t ->
-                    NavigationBarItem(
-                        selected = i == tab, onClick = { s.nav.homeTab = i }, label = { Text(t.label, fontSize = 11.sp) },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Cinnamon, selectedTextColor = Cinnamon, indicatorColor = Color.Transparent,
-                            unselectedIconColor = TextSecondary, unselectedTextColor = TextSecondary,
-                        ),
-                        icon = {
-                            if (t.badge > 0) BadgedBox(badge = { Badge { Text(t.badge.toString()) } }) { Icon(t.icon, t.label) }
-                            else Icon(t.icon, t.label)
-                        },
-                    )
-                }
-            }
-            }
-        },
+        bottomBar = { GlassTabBar(tabs, tab) { s.nav.homeTab = it } },
         floatingActionButton = {
             if (label == "Home" || label == "My requests") ExtendedFloatingActionButton(
                 onClick = { s.nav.go(Screen.NewRequest()) },
-                icon = { Icon(Icons.Filled.Add, null) }, text = { Text("Request van") },
+                icon = { Icon(Icons.Filled.Add, null) }, text = { Text("Request vehicle") },
                 containerColor = Cinnamon, contentColor = MaterialTheme.colorScheme.onPrimary, shape = leafShape(28.dp, 8.dp),
             )
         },
     ) { pad ->
-        LazyColumn(Modifier.padding(pad).fillMaxSize()) {
+        // Content scrolls beneath the glass bars, so they blur it.
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = pad) {
             item { UpdateBanner() }
             if (!online) item { Banner("Offline – showing saved data. Changes sync when back online.", WarnOrange) }
             when (label) {
@@ -145,7 +124,7 @@ fun StaffHome(s: Session) {
                 "Alerts" -> alertsList(s, alerts)
                 "More" -> moreMenu(s)
             }
-            item { Spacer(Modifier.height(80.dp)) }
+            item { Spacer(Modifier.height(64.dp)) }
         }
     }
 }
@@ -212,25 +191,58 @@ private fun DriversCard() {
 private fun UpcomingTrips(s: Session) {
     val open by remember { Repo.openTripsFlow() }.collectAsState(initial = emptyList())
     val schedules by remember { Repo.schedulesFlow() }.collectAsState(initial = emptyList())
+    val today = remember { TripCalc.dayStart(System.currentTimeMillis()) }
+    val todayTrips by remember { Repo.tripsSinceFlow(today) }.collectAsState(initial = emptyList())
+    val mine by remember(s.me.uid) { Repo.myRequestsFlow(s.me.uid) }.collectAsState(initial = emptyList())
     val dayKey = Repo.dateKey()
-    val todays = schedules.filter {
-        it.active && TripCalc.isoDay(System.currentTimeMillis()) in it.days && open.none { t -> t.id == Repo.scheduleTripId(it.id, dayKey) }
-    }
-    SectionHeader("Van plan – join a trip going your way")
-    if (open.isEmpty() && todays.isEmpty()) Empty("No trips planned.")
-    open.forEach { t ->
-        TripCard(t, s, onClick = { s.nav.go(Screen.TripDetail(t.id)) }) {
-            if (t.isOpen || t.status == TripStatus.IN_PROGRESS) {
-                OutlinedButton(onClick = { s.nav.go(Screen.NewRequest("trip:${t.id}", t.title)) }) { Text("+ Add my stop to this trip") }
+    val runs = schedules.filter { it.active && TripCalc.isoDay(System.currentTimeMillis()) in it.days }.sortedBy { it.time }
+
+    SectionHeader("Today's scheduled runs – book a seat")
+    if (runs.isEmpty()) Empty("No scheduled runs today.")
+    runs.forEach { sc ->
+        val tripId = Repo.scheduleTripId(sc.id, dayKey)
+        val trip = open.firstOrNull { it.id == tripId } ?: todayTrips.firstOrNull { it.id == tripId }
+        val target = Repo.scheduleTarget(sc, dayKey)
+        val myBooking = mine.firstOrNull { it.joinTarget == target && it.status != RequestStatus.CANCELLED && it.status != RequestStatus.REJECTED }
+        val departed = trip != null && !trip.isOpen
+        val (status, color) = when {
+            trip == null -> "Seats open" to OkGreen
+            trip.status == TripStatus.IN_PROGRESS -> "On the road" to InfoBlue
+            trip.status == TripStatus.COMPLETED -> "Completed" to TextSecondary
+            trip.status == TripStatus.CANCELLED -> "Cancelled" to TextSecondary
+            else -> "Seats open" to OkGreen
+        }
+        SectionCard(accent = Cinnamon, onClick = trip?.let { { s.nav.go(Screen.TripDetail(it.id)) } }) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(sc.title, style = MaterialTheme.typography.titleMedium)
+                    Text("Departs ${sc.time}" + (sc.destination?.name?.let { " · to $it" } ?: ""), color = TextSecondary, fontSize = 13.sp)
+                }
+                Chip(status, color)
+            }
+            if (sc.stops.isNotEmpty()) Text("Via: " + sc.stops.joinToString(" → ") { it.name }, fontSize = 13.sp)
+            if (trip != null) {
+                InfoRow("Booked passengers", trip.passengers.toString())
+                if (trip.driverName.isNotBlank()) InfoRow("Driver", trip.driverName)
+            }
+            if (myBooking != null) {
+                Text("✓ Your seat is booked" + (myBooking.stops.firstOrNull()?.name?.let { " – drop-off: $it" } ?: ""),
+                    color = OkGreen, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            } else if (!departed) {
+                Spacer(Modifier.height(6.dp))
+                Button(onClick = { s.nav.go(Screen.NewRequest(target, "${sc.title} (${sc.time})")) }) { Text("Book my seat") }
             }
         }
     }
-    todays.forEach { sc ->
-        SectionCard("${sc.title} · ${sc.time}", accent = InfoBlue) {
-            Text("Scheduled daily run (pre-approved)", fontSize = 13.sp, color = TextSecondary)
-            if (sc.stops.isNotEmpty()) Text("Stops: " + sc.stops.joinToString(" → ") { it.name }, fontSize = 13.sp)
-            OutlinedButton(onClick = { s.nav.go(Screen.NewRequest(Repo.scheduleTarget(sc), "${sc.title} (${sc.time})")) }) {
-                Text("+ Add my stop to this run")
+
+    val others = open.filter { it.type != TripType.SCHEDULED }
+    if (others.isNotEmpty()) {
+        SectionHeader("Other trips – join one going your way")
+        others.forEach { t ->
+            TripCard(t, s, onClick = { s.nav.go(Screen.TripDetail(t.id)) }) {
+                if (t.isOpen || t.status == TripStatus.IN_PROGRESS) {
+                    OutlinedButton(onClick = { s.nav.go(Screen.NewRequest("trip:${t.id}", t.title)) }) { Text("+ Add my stop to this trip") }
+                }
             }
         }
     }
@@ -261,11 +273,14 @@ fun RequestCard(r: TripRequest, s: Session, actions: @Composable () -> Unit = {}
             Chip(r.status.label, color)
         }
         Text(r.purpose, fontSize = 14.sp)
-        InfoRow("Requested by", r.requesterName)
+        InfoRow("Passenger(s)", r.travellers)
+        if (r.passengerNames.isNotBlank() && r.passengerNames != r.requesterName) InfoRow("Requested by", r.requesterName)
         InfoRow("When", TripCalc.dateTime(r.requestedTime))
         InfoRow("Passengers", r.passengers.toString())
         if (r.stops.isNotEmpty()) Text("Stops: " + r.stops.joinToString(" → ") { it.name }, fontSize = 13.sp)
-        if (r.joinTargetLabel.isNotBlank()) Text("Wants to join: ${r.joinTargetLabel}", color = InfoBlue, fontSize = 13.sp)
+        if (r.joinTargetLabel.isNotBlank()) Text(
+            (if (r.joinTarget.startsWith("sched:")) "Seat on: " else "Wants to join: ") + r.joinTargetLabel, color = InfoBlue, fontSize = 13.sp,
+        )
         if (r.notes.isNotBlank()) Text("Notes: ${r.notes}", fontSize = 13.sp, color = TextSecondary)
         if (r.approverName.isNotBlank()) Text(
             "${r.status.label} by ${r.approverName}" + (if (r.decisionComment.isNotBlank()) ": “${r.decisionComment}”" else ""),
@@ -273,6 +288,7 @@ fun RequestCard(r: TripRequest, s: Session, actions: @Composable () -> Unit = {}
         )
         when {
             r.driverName.isNotBlank() -> InfoRow("Driver", r.driverName, OkGreen)
+            r.status == RequestStatus.APPROVED && r.joinTarget.startsWith("sched:") -> Text("Seat confirmed", fontSize = 13.sp, color = OkGreen)
             r.status == RequestStatus.APPROVED -> Text("Waiting for a driver to accept…", fontSize = 13.sp, color = WarnOrange)
         }
         actions()
@@ -329,37 +345,42 @@ private fun rememberJoinOptions(): List<Pair<String, String>> {
 @Composable
 fun NewRequestScreen(s: Session, joinTarget: String, joinLabel: String) {
     val ctx = LocalContext.current
+    val schedules by remember { Repo.schedulesFlow() }.collectAsState(initial = emptyList())
+    // "sched:<id>:<day>" = booking a seat on a pre-approved scheduled run.
+    val schedParts = if (joinTarget.startsWith("sched:")) joinTarget.split(":") else null
+    val schedule = schedParts?.let { p -> schedules.firstOrNull { it.id == p.getOrNull(1) } }
+    if (schedParts != null) {
+        if (schedule == null) {
+            Scaffold(topBar = { AppBar("Book a seat", onBack = { s.nav.back() }) }) { pad -> Box(Modifier.padding(pad)) { Empty("Loading run…") } }
+        } else {
+            BookSeatScreen(s, schedule, schedParts.getOrNull(2) ?: Repo.dateKey())
+        }
+        return
+    }
+
     var category by remember { mutableStateOf(CATEGORIES.first()) }
     var purpose by remember { mutableStateOf("") }
     val stops = remember { mutableStateListOf(Stop()) }
     var time by remember { mutableLongStateOf(System.currentTimeMillis() + 30 * 60_000) }
     var passengers by remember { mutableStateOf("1") }
+    var passengerNames by remember { mutableStateOf(s.me.name) }
     var notes by remember { mutableStateOf("") }
     val options = rememberJoinOptions()
     var target by remember { mutableStateOf(joinTarget) }
     var targetLabel by remember { mutableStateOf(joinLabel) }
     var autoApprove by remember { mutableStateOf(false) }
-    var pickIndex by remember { mutableStateOf(-1) }
-    val schedules by remember { Repo.schedulesFlow() }.collectAsState(initial = emptyList())
 
-    Scaffold(topBar = { AppBar("Request the van", onBack = { s.nav.back() }) }) { pad ->
+    Scaffold(topBar = { AppBar("Request a vehicle", onBack = { s.nav.back() }) }) { pad ->
         Column(Modifier.padding(pad).padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Picker("Category", category, CATEGORIES) { category = it }
             OutlinedTextField(purpose, { purpose = it }, label = { Text("Business purpose") }, modifier = Modifier.fillMaxWidth())
-            Text("Destination / stops", fontWeight = FontWeight.Bold)
-            stops.forEachIndexed { i, st ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedTextField(st.name, { v -> stops[i] = st.copy(name = v) }, label = { Text("Stop ${i + 1}") }, modifier = Modifier.weight(1f))
-                    IconButton(onClick = { pickIndex = i }) {
-                        Icon(Icons.Filled.Place, "Pick on map", tint = if (st.lat != null) OkGreen else TextSecondary)
-                    }
-                }
-            }
-            TextButton(onClick = { stops.add(Stop()) }) { Text("+ Add another stop") }
+            SectionHeader("Destination / stops")
+            StopsEditor(stops, s, label = { if (it == 0) "Destination" else "Stop ${it + 1}" })
             OutlinedButton(onClick = { pickDateTime(ctx, time) { time = it } }, modifier = Modifier.fillMaxWidth()) {
                 Text("Departure: ${TripCalc.dateTime(time)}")
             }
-            OutlinedTextField(passengers, { passengers = it.filter(Char::isDigit) }, label = { Text("Passengers") },
+            OutlinedTextField(passengerNames, { passengerNames = it }, label = { Text("Passenger name(s)") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(passengers, { passengers = it.filter(Char::isDigit) }, label = { Text("Number of passengers") },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
             Picker("Trip", options.firstOrNull { it.first == target }?.second ?: targetLabel.ifBlank { "New separate trip" }, options.map { it.second }) { l ->
                 val o = options.first { it.second == l }; target = o.first; targetLabel = if (o.first.isBlank()) "" else o.second
@@ -376,7 +397,7 @@ fun NewRequestScreen(s: Session, joinTarget: String, joinLabel: String) {
                         requesterUid = s.me.uid, requesterName = s.me.name, department = s.me.department,
                         category = category, purpose = purpose.trim(), stops = stops.filter { it.name.isNotBlank() },
                         requestedTime = time, passengers = passengers.toIntOrNull() ?: 1, notes = notes.trim(),
-                        joinTarget = target, joinTargetLabel = targetLabel,
+                        joinTarget = target, joinTargetLabel = targetLabel, passengerNames = passengerNames.trim(),
                     )
                     val id = Repo.submitRequest(r)
                     if (autoApprove) {
@@ -389,29 +410,63 @@ fun NewRequestScreen(s: Session, joinTarget: String, joinLabel: String) {
             Text("Your GM / Operations Manager will be notified. You'll see the decision here.", color = TextSecondary, fontSize = 13.sp)
         }
     }
+}
 
-    if (pickIndex >= 0) {
-        val idx = pickIndex
-        var picked by remember(idx) { mutableStateOf(stops.getOrNull(idx)?.let { if (it.lat != null) MapPin(it.lat, it.lng!!, it.name) else null }) }
-        AlertDialog(
-            onDismissRequest = { pickIndex = -1 },
-            title = { Text("Tap the destination on the map") },
-            text = {
-                VanMap(
-                    Modifier.fillMaxWidth().height(320.dp),
-                    pins = listOfNotNull(picked) + if (s.settings.hotelSet) listOf(MapPin(s.settings.hotelLat, s.settings.hotelLng, s.settings.hotelName)) else emptyList(),
-                    fitKey = "pick$idx",
-                    onTap = { la, lo -> picked = MapPin(la, lo, "Stop") },
+/** Book a seat on a scheduled run (e.g. night transport) with your own drop-off point. */
+@Composable
+private fun BookSeatScreen(s: Session, sc: Schedule, day: String) {
+    val stops = remember { mutableStateListOf(Stop()) }
+    var passengerNames by remember { mutableStateOf(s.me.name) }
+    var seats by remember { mutableStateOf("1") }
+    var notes by remember { mutableStateOf("") }
+    var saving by remember { mutableStateOf(false) }
+    val instant = s.settings.autoApproveScheduled
+    Scaffold(topBar = { AppBar("Book a seat", onBack = { s.nav.back() }) }) { pad ->
+        Column(Modifier.padding(pad).verticalScroll(rememberScrollState())) {
+            SectionCard(sc.title, accent = Cinnamon) {
+                InfoRow("Departs", "${sc.time}, ${if (day == Repo.dateKey()) "today" else day}")
+                sc.destination?.let { InfoRow("Goes to", it.name) }
+                if (sc.stops.isNotEmpty()) InfoRow("Via", sc.stops.joinToString(" → ") { it.name })
+                Text(
+                    "The run goes to its planned destination; your own drop-off point is added to the driver's route.",
+                    color = TextSecondary, fontSize = 13.sp,
                 )
-            },
-            confirmButton = {
-                Button(onClick = {
-                    picked?.let { p -> stops.getOrNull(idx)?.let { stops[idx] = it.copy(lat = p.lat, lng = p.lng) } }
-                    pickIndex = -1
-                }) { Text("Use this point") }
-            },
-            dismissButton = { TextButton(onClick = { pickIndex = -1 }) { Text("Cancel") } },
-        )
+            }
+            Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                SectionHeader("Where should the driver drop you?")
+                StopsEditor(stops, s, label = { "Drop-off point (search or tap the map)" }, allowAdd = false)
+                if (sc.destination != null) TextButton(onClick = { stops[0] = sc.destination.copy(requestId = "", arrivedAt = null) }) {
+                    Text("Same as the run: ${sc.destination.name}")
+                }
+                OutlinedTextField(passengerNames, { passengerNames = it }, label = { Text("Passenger name(s)") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(seats, { seats = it.filter(Char::isDigit) }, label = { Text("Seats") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(notes, { notes = it }, label = { Text("Note for the driver (optional)") }, modifier = Modifier.fillMaxWidth())
+                Button(
+                    enabled = !saving && stops.first().name.isNotBlank() && passengerNames.isNotBlank(),
+                    modifier = Modifier.fillMaxWidth().height(50.dp),
+                    onClick = {
+                        saving = true
+                        val r = TripRequest(
+                            requesterUid = s.me.uid, requesterName = s.me.name, department = s.me.department,
+                            category = sc.category.ifBlank { "Staff Transport" }, purpose = sc.purpose.ifBlank { sc.title },
+                            stops = stops.filter { it.name.isNotBlank() }, requestedTime = Repo.plannedTimeFor(sc, day),
+                            passengers = seats.toIntOrNull()?.coerceAtLeast(1) ?: 1, notes = notes.trim(),
+                            joinTarget = Repo.scheduleTarget(sc, day), joinTargetLabel = "${sc.title} (${sc.time})",
+                            passengerNames = passengerNames.trim(),
+                        )
+                        if (instant) AppScope.launch { Repo.bookScheduledSeat(r, sc, day) } else Repo.submitRequest(r)
+                        s.nav.back()
+                    },
+                ) { Text(if (instant) "Confirm my seat" else "Send for approval") }
+                Text(
+                    if (instant) "Scheduled runs are pre-approved – your seat is confirmed straight away and the driver sees your drop-off."
+                    else "Your GM / Operations Manager will confirm the seat.",
+                    color = TextSecondary, fontSize = 13.sp,
+                )
+                Spacer(Modifier.height(24.dp))
+            }
+        }
     }
 }
 

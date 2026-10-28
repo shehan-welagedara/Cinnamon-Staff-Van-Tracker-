@@ -242,12 +242,12 @@ fun DriverHome(s: Session) {
         message = null
     }
 
-    Scaffold(topBar = {
+    GlassScaffold(topBar = {
         AppBar("Hi, ${me.name.substringBefore(' ')}") {
             IconButton(onClick = { s.nav.go(Screen.DriverSetup) }) { Icon(Icons.Filled.Settings, "Setup") }
         }
     }) { pad ->
-        LazyColumn(Modifier.padding(pad).fillMaxSize()) {
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = pad) {
             item { UpdateBanner() }
             message?.let { (text, err) -> item { Banner(text, if (err) DangerRed else OkGreen) { message = null } } }
             if (!online) item { Banner("Offline – trips are still recorded and sync automatically. Accepting new trips needs internet.", WarnOrange) }
@@ -449,6 +449,7 @@ fun TripCard(t: Trip, s: Session, onClick: (() -> Unit)? = null, actions: @Compo
         if (time > 0) InfoRow(if (t.startTime != null) "Started" else "Planned", TripCalc.dateTime(time))
         if (t.departments.isNotEmpty()) InfoRow("Departments", t.departments.joinToString(", "))
         if (t.stops.isNotEmpty()) Text("Stops: " + t.stops.joinToString(" → ") { it.name }, fontSize = 13.sp)
+        t.destination?.let { InfoRow("Destination", it.name) }
         if (t.passengers > 0) InfoRow("Passengers", t.passengers.toString())
         if (t.driverName.isNotBlank()) InfoRow("Driver", t.driverName)
         if (t.vehicleName.isNotBlank()) InfoRow("Vehicle", t.vehicleName)
@@ -491,10 +492,17 @@ fun ActiveTripScreen(s: Session) {
         Column(Modifier.padding(pad).fillMaxSize()) {
             if (unauthorized) Banner("No approved trip. Your route is recorded and management is notified. Enter the reason below.", DangerRed)
             val vehicle = rememberVehicles(s, includeInactive = true).firstOrNull { it.id == st.vehicleId }
+            val tripNow = trip
+            // Drop-off points of every passenger plus the run's destination, so the driver sees the whole route.
+            val stopPins = tripNow?.let { tr ->
+                (tr.stops + listOfNotNull(tr.destination)).filter { it.hasLocation && it.arrivedAt == null }
+                    .map { MapPin(it.lat!!, it.lng!!, it.name, snippet = it.department) }
+            }.orEmpty()
             VanMap(
-                modifier = Modifier.fillMaxWidth().height(260.dp),
+                modifier = Modifier.fillMaxWidth().height(280.dp),
                 path = live.points,
-                fitKey = st.tripId,
+                pins = stopPins,
+                fitKey = "${st.tripId}-${stopPins.size}",
                 follow = true,
                 vehicleTitle = st.vehicleName.ifBlank { "Vehicle" },
             )
@@ -509,17 +517,30 @@ fun ActiveTripScreen(s: Session) {
                     InfoRow("Est. fuel / cost", "${TripCalc.liters(liters)} · ${TripCalc.money(cost, s.settings.currency)}")
                 }
                 val t = trip
+                val passengers by remember(st.tripId) {
+                    if (st.tripId.isBlank()) kotlinx.coroutines.flow.flowOf(emptyList<com.cinnamon.vantracker.data.TripRequest>()) else Repo.requestsForTripFlow(st.tripId)
+                }.collectAsState(initial = emptyList())
                 if (t != null && t.stops.isNotEmpty()) {
-                    SectionCard("Stops") {
+                    SectionCard("Stops & drop-offs") {
                         t.stops.forEachIndexed { i, stop ->
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 2.dp)) {
+                            val who = passengers.firstOrNull { it.id == stop.requestId }?.travellers
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 3.dp)) {
                                 Column(Modifier.weight(1f)) {
                                     Text("${i + 1}. ${stop.name}", fontWeight = FontWeight.Medium)
-                                    if (stop.department.isNotBlank()) Text(stop.department, fontSize = 12.sp, color = TextSecondary)
+                                    Text(listOfNotNull(who, stop.department.ifBlank { null }).joinToString(" · "), fontSize = 12.sp, color = TextSecondary)
                                 }
+                                if (stop.hasLocation && stop.arrivedAt == null) TextButton(onClick = { navigateTo(ctx, stop.lat!!, stop.lng!!) }) { Text("Navigate") }
                                 if (stop.arrivedAt != null) Text("✅ ${TripCalc.time(stop.arrivedAt)}", color = OkGreen)
                                 else OutlinedButton(onClick = { Repo.markStopArrived(t, i) }) { Text("Arrived") }
                             }
+                        }
+                    }
+                }
+                t?.destination?.let { d ->
+                    SectionCard("Final destination", accent = Cinnamon) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(d.name, style = androidx.compose.material3.MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                            if (d.hasLocation) Button(onClick = { navigateTo(ctx, d.lat!!, d.lng!!) }) { Text("Navigate") }
                         }
                     }
                 }
@@ -626,5 +647,14 @@ fun FuelEntryScreen(s: Session) {
                 },
             ) { Text("Save") }
         }
+    }
+}
+
+
+/** Opens turn-by-turn navigation (Google Maps if installed, otherwise any maps app). */
+fun navigateTo(ctx: Context, lat: Double, lng: Double) {
+    val nav = Intent(Intent.ACTION_VIEW, Uri.parse("google.navigation:q=$lat,$lng&mode=d")).setPackage("com.google.android.apps.maps")
+    runCatching { ctx.startActivity(nav) }.onFailure {
+        runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("geo:$lat,$lng?q=$lat,$lng"))) }
     }
 }

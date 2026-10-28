@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import com.cinnamon.vantracker.notify.Notifier
 import com.cinnamon.vantracker.ui.AppRoot
 import com.cinnamon.vantracker.ui.Brand
+import com.cinnamon.vantracker.ui.GlassBackdrop
 import com.cinnamon.vantracker.ui.ThemePrefs
 import com.cinnamon.vantracker.ui.VanTheme
 import com.cinnamon.vantracker.ui.isDarkTheme
@@ -40,6 +41,7 @@ class MainActivity : ComponentActivity() {
             }
             VanTheme {
                 Box(Modifier.fillMaxSize().background(Brand.colors.background)) {
+                    GlassBackdrop(Modifier.fillMaxSize())
                     AppRoot(openRequest = openRequest.value, onOpenHandled = { openRequest.value = "" })
                 }
             }

@@ -13,6 +13,9 @@ service cloud.firestore {
     function isManager() { return active() && (me().role in ['GM', 'OM', 'ADMIN'] || me().isAdmin == true); }
     function isDriver() { return active() && me().role == 'DRIVER'; }
     function changed() { return request.resource.data.diff(resource.data).affectedKeys(); }
+    function autoApproveRuns() {
+      return get(/databases/$(database)/documents/config/settings).data.get('autoApproveScheduled', true) != false;
+    }
 
     // First account may claim the administrator role exactly once.
     match /meta/bootstrap {
@@ -58,8 +61,11 @@ service cloud.firestore {
 
     match /requests/{id} {
       allow read: if active();
+      // Normal requests start PENDING; seats on pre-approved scheduled runs may be confirmed directly.
       allow create: if active() && request.resource.data.requesterUid == request.auth.uid
-        && request.resource.data.status == 'PENDING';
+        && (request.resource.data.status == 'PENDING'
+            || (request.resource.data.status == 'APPROVED'
+                && request.resource.data.joinTarget.matches('sched:.*') && autoApproveRuns()));
       allow update: if isManager() || isDriver()
         || (active() && resource.data.requesterUid == request.auth.uid && request.resource.data.status == 'CANCELLED');
       allow delete: if isAdmin();
@@ -67,10 +73,15 @@ service cloud.firestore {
 
     match /trips/{id} {
       allow read: if active();
-      allow create: if isManager() || isDriver();
+      // Anyone booking a seat may open today's run of a schedule (ids "sched_<schedule>_<day>").
+      allow create: if isManager() || isDriver()
+        || (active() && id.matches('sched_.*') && request.resource.data.type == 'SCHEDULED'
+            && request.resource.data.status == 'READY');
       // HODs may only detach their own stop from a trip that has not started (cancel request).
       allow update: if isManager() || isDriver()
-        || (active() && resource.data.status in ['READY', 'ASSIGNED'] && changed().hasOnly(['requestIds', 'stops', 'passengers', 'status']));
+        || (active() && resource.data.status in ['READY', 'ASSIGNED'] && changed().hasOnly(['requestIds', 'stops', 'passengers', 'status']))
+        || (active() && id.matches('sched_.*') && resource.data.status in ['READY', 'ASSIGNED']
+            && changed().hasOnly(['requestIds', 'departments', 'stops', 'passengers']));
       allow delete: if isAdmin();
 
       match /track/{chunk} {

@@ -50,6 +50,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.unit.Dp
+import dev.chrisbanes.haze.hazeEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -67,10 +68,12 @@ import java.util.Calendar
 @Composable
 fun AppBar(title: String, onBack: (() -> Unit)? = null, actions: @Composable () -> Unit = {}) {
     val b = Brand.colors
+    val haze = LocalHaze.current
     Column(
         Modifier
             .fillMaxWidth()
-            .background(b.background)
+            // Glass bar: blurs the content scrolling underneath (GlassScaffold), else a light frosted tint.
+            .then(if (haze != null) Modifier.hazeEffect(haze, glassStyle()) else Modifier.background(b.background.copy(alpha = 0.55f)))
             .windowInsetsPadding(WindowInsets.statusBars)
     ) {
         Box(Modifier.fillMaxWidth().height(48.dp).padding(horizontal = 6.dp)) {
@@ -114,15 +117,16 @@ fun AppBar(title: String, onBack: (() -> Unit)? = null, actions: @Composable () 
     }
 }
 
-/** Brand card: white, 22dp radius, soft purple shadow. */
+/** Brand glass card: 22dp radius, frosted translucent fill, bright top edge, soft purple shadow. */
 fun Modifier.brandCard(b: BrandColors, radius: Dp = 22.dp): Modifier = this
     .padding(horizontal = 16.dp, vertical = 6.dp)
     .shadow(
-        elevation = if (b.dark) 0.dp else 10.dp, shape = RoundedCornerShape(radius),
-        ambientColor = b.shadow.copy(alpha = 0.18f), spotColor = b.shadow.copy(alpha = 0.18f),
+        elevation = if (b.dark) 0.dp else 8.dp, shape = RoundedCornerShape(radius),
+        ambientColor = b.shadow.copy(alpha = 0.10f), spotColor = b.shadow.copy(alpha = 0.14f),
     )
     .clip(RoundedCornerShape(radius))
-    .background(b.card)
+    .background(if (b.dark) b.card.copy(alpha = 0.66f) else Color.White.copy(alpha = 0.74f))
+    .border(1.dp, glassEdge(b.dark), RoundedCornerShape(radius))
 
 /** Inset grouped card (iOS Settings style). [accent] draws a slim status strip on the left. */
 @Composable

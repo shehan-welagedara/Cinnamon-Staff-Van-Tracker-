@@ -196,7 +196,8 @@ fun VanTheme(content: @Composable () -> Unit) {
         primaryContainer = b.accent.copy(alpha = 0.22f), onPrimaryContainer = b.accent,
         secondary = b.magenta, onSecondary = Color.Black,
         tertiary = b.magenta,
-        background = b.background, onBackground = b.text,
+        // Transparent so the glass backdrop shows through every screen.
+        background = Color.Transparent, onBackground = b.text,
         surface = b.card, onSurface = b.text,
         surfaceVariant = b.fill, onSurfaceVariant = b.secondary,
         surfaceContainer = b.card, surfaceContainerHigh = b.fill, surfaceContainerHighest = b.fill,
@@ -208,7 +209,8 @@ fun VanTheme(content: @Composable () -> Unit) {
         primaryContainer = b.accent.copy(alpha = 0.10f), onPrimaryContainer = b.accent,
         secondary = b.magenta, onSecondary = Color.White,
         tertiary = b.magenta,
-        background = b.background, onBackground = b.text,
+        // Transparent so the glass backdrop shows through every screen.
+        background = Color.Transparent, onBackground = b.text,
         surface = b.card, onSurface = b.text,
         surfaceVariant = b.fill, onSurfaceVariant = b.secondary,
         surfaceContainer = b.card, surfaceContainerHigh = b.card, surfaceContainerHighest = b.fill,

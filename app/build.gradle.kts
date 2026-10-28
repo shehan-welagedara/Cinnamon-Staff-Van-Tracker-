@@ -102,4 +102,7 @@ dependencies {
     implementation("org.osmdroid:osmdroid-android:6.1.20")
     // Google Maps (only used when a MAPS_API_KEY is provided at build time)
     implementation("com.google.maps.android:maps-compose:6.1.0")
+
+    // Frosted "liquid glass" blur behind bars and cards (Apache 2.0)
+    implementation("dev.chrisbanes.haze:haze:1.2.2")
 }

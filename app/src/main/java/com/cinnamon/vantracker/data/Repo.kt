@@ -211,6 +211,7 @@ object Repo {
                         "title" to sched.title, "category" to sched.category, "purpose" to sched.purpose,
                         "scheduleId" to sched.id, "plannedTime" to plannedTimeFor(sched, day),
                         "createdAt" to now(), "openedAt" to now(), "createdBy" to approver.name,
+                        "destination" to sched.destination?.toMap(),
                     )
                     data += driverFields
                     data += vehicleFields
@@ -291,6 +292,49 @@ object Repo {
         batch.commit()
     }
 
+    /**
+     * Books a seat on today's (or a given day's) run of a pre-approved schedule. The request is
+     * confirmed immediately and the passenger's drop-off is added to that run's trip.
+     */
+    suspend fun bookScheduledSeat(r: TripRequest, sched: Schedule, day: String) {
+        val reqRef = requests.document()
+        val tripRef = trips.document(scheduleTripId(sched.id, day))
+        val stops = r.stops.map { it.copy(requestId = reqRef.id, department = r.department) }
+        val exists = runCatching { tripRef.get().await().exists() }.getOrDefault(false)
+        val tripData = mutableMapOf<String, Any?>(
+            "requestIds" to FieldValue.arrayUnion(reqRef.id),
+            "departments" to FieldValue.arrayUnion(r.department),
+            "stops" to FieldValue.arrayUnion(*stops.map { it.toMap() }.toTypedArray()),
+            "passengers" to FieldValue.increment(r.passengers.toLong()),
+        )
+        if (!exists) {
+            tripData += mapOf(
+                "type" to TripType.SCHEDULED.name, "status" to TripStatus.READY.name,
+                "title" to sched.title, "category" to sched.category, "purpose" to sched.purpose,
+                "scheduleId" to sched.id, "plannedTime" to plannedTimeFor(sched, day),
+                "createdAt" to now(), "openedAt" to now(), "createdBy" to "Schedule booking",
+                "destination" to sched.destination?.toMap(),
+                "driverUid" to "", "driverName" to "",
+            )
+            // The run's own stops come first.
+            tripData["stops"] = FieldValue.arrayUnion(*(sched.stops + stops).map { it.toMap() }.toTypedArray())
+            tripData["departments"] = FieldValue.arrayUnion(*listOf(sched.department, r.department).filter { it.isNotBlank() }.toTypedArray())
+        }
+        val batch = db.batch()
+        batch.set(
+            reqRef, r.copy(
+                id = reqRef.id, status = RequestStatus.APPROVED, createdAt = now(), tripId = tripRef.id,
+                approverName = "Pre-approved schedule", decidedAt = now(),
+                joinTarget = scheduleTarget(sched, day), joinTargetLabel = "${sched.title} (${sched.time})",
+            ).toMap()
+        )
+        batch.set(tripRef, tripData, SetOptions.merge())
+        batch.commit()
+    }
+
+    fun requestsSinceFlow(from: Long) = queryFlow(requests.whereGreaterThanOrEqualTo("requestedTime", from))
+        .map { s -> s?.documents?.map(TripRequest::from).orEmpty().sortedByDescending { it.requestedTime } }
+
     fun rejectRequest(r: TripRequest, approver: UserProfile, comment: String) {
         requests.document(r.id).update(
             mapOf(
@@ -356,6 +400,7 @@ object Repo {
                 "stops" to FieldValue.arrayUnion(*s.stops.map { it.toMap() }.toTypedArray()),
                 "startTime" to startTime, "driverUid" to driver.uid, "driverName" to driver.name,
                 "vehicleId" to vehicle.id, "vehicleName" to vehicle.label,
+                "destination" to s.destination?.toMap(),
                 "createdAt" to now(), "createdBy" to "Schedule",
             ),
             SetOptions.merge(),
