@@ -198,12 +198,36 @@ function route() {
   current = (location.hash || "#overview").slice(1);
   if (!VIEWS[current]) current = "overview";
   Object.keys(VIEWS).forEach((v) => { $(`view-${v}`).hidden = v !== current; });
-  document.querySelectorAll("#nav a").forEach((a) => a.classList.toggle("active", a.dataset.view === current));
+  document.querySelectorAll("#nav a, #tabbar a").forEach((a) => a.classList.toggle("active", a.dataset.view === current));
+  setNav(false);
   $("viewEyebrow").textContent = VIEWS[current][0];
   renderSoon();
   if (current === "live" && liveMap) setTimeout(() => liveMap.invalidateSize(), 50);
 }
 window.addEventListener("hashchange", route);
+
+// Phones: side menu slides in as a drawer (☰ in the top bar or "More" in the tab bar).
+function setNav(open) { $("app").classList.toggle("nav-open", open); }
+$("menuBtn").onclick = () => setNav(true);
+$("tabMore").onclick = () => setNav(!$("app").classList.contains("nav-open"));
+$("closeNav").onclick = () => setNav(false);
+$("scrim").onclick = () => setNav(false);
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") setNav(false); });
+
+// Keep maps sized correctly when the window / orientation changes.
+let resizeT = 0;
+window.addEventListener("resize", () => {
+  clearTimeout(resizeT);
+  resizeT = setTimeout(() => { liveMap?.invalidateSize(); tdMap?.invalidateSize(); }, 150);
+});
+
+/** On narrow screens tables turn into stacked cards; each cell shows its column name. */
+function labelTables(root = document) {
+  root.querySelectorAll("table").forEach((t) => {
+    const heads = [...t.querySelectorAll("thead th")].map((th) => th.textContent.trim());
+    t.querySelectorAll("tbody tr").forEach((tr) => [...tr.children].forEach((td, i) => { if (heads[i]) td.dataset.label = heads[i]; }));
+  });
+}
 $("rangePreset").addEventListener("change", () => {
   const custom = $("rangePreset").value === "custom";
   $("rangeFrom").hidden = !custom; $("rangeTo").hidden = !custom;
@@ -221,7 +245,9 @@ function render() {
   const pend = S.pending.length, al = S.alerts.filter((a) => !a.acknowledged).length;
   $("pendingBadge").hidden = !pend; $("pendingBadge").textContent = pend;
   $("alertBadge").hidden = !al; $("alertBadge").textContent = al;
+  $("moreBadge").hidden = !(pend || al);
   VIEWS[current][1]();
+  labelTables($(`view-${current}`));
 }
 
 function fillFilters() {
@@ -249,6 +275,8 @@ function chart(id, type, labels, data, opts = {}) {
     type,
     data: { labels, datasets: [{ data, backgroundColor: type === "doughnut" ? palette : "#592C82cc", borderRadius: 8, borderWidth: 0 }] },
     options: {
+      responsive: true,
+      maintainAspectRatio: false,
       plugins: { legend: { display: type === "doughnut", position: "right", labels: { color: text } } },
       scales: type === "doughnut" ? {} : { x: { ticks: { color: text }, grid: { display: false } }, y: { ticks: { color: text }, grid: { color: "rgba(128,100,160,.15)" } } },
       ...opts,
@@ -352,6 +380,7 @@ async function openTrip(id) {
     ${stopRows ? `<h3>Stops & drop-offs</h3><div class="table-wrap"><table><thead><tr><th>#</th><th>Stop</th><th>Passenger</th><th>Department</th><th>Arrived</th></tr></thead><tbody>${stopRows}</tbody></table></div>` : ""}
     ${reqs.length ? `<h3 style="margin-top:14px">Passengers</h3><div class="table-wrap"><table><thead><tr><th>Passenger(s)</th><th>Requested by</th><th>Department</th><th class="num">Seats</th><th>Status</th></tr></thead><tbody>${
       reqs.map((r) => `<tr><td>${esc(travellers(r))}</td><td>${esc(r.requesterName)}</td><td>${esc(normDept(r.department))}</td><td class="num">${r.passengers || 1}</td><td>${chip(r.status)}</td></tr>`).join("")}</tbody></table></div>` : ""}`;
+  labelTables($("tdBody"));
   $("tripDialog").showModal();
 
   const track = (await getDocs(collection(db, "trips", id, "track"))).docs.map((d) => d.data()).sort((a, b) => a.seq - b.seq)

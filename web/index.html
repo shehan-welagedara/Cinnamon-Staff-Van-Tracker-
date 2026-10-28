@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#592C82">
   <title>Van Tracker · Management Dashboard</title>
   <meta name="description" content="Kandy Myst by Cinnamon – staff transport dashboard: live fleet, trips, passengers, drivers and costs.">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
@@ -53,16 +54,17 @@
     <aside class="sidebar glass">
       <div class="brand">
         <div class="logo-dot">🚐</div>
-        <div><p class="eyebrow">Kandy Myst by Cinnamon</p><b>Van Tracker</b></div>
+        <div class="lbl"><p class="eyebrow">Kandy Myst by Cinnamon</p><b>Van Tracker</b></div>
+        <button id="closeNav" class="btn ghost icon mobile-only" aria-label="Close menu">✕</button>
       </div>
       <nav id="nav">
-        <a href="#overview" data-view="overview">📊 Overview</a>
-        <a href="#live" data-view="live">🗺 Live fleet</a>
-        <a href="#trips" data-view="trips">🧭 Trips</a>
-        <a href="#passengers" data-view="passengers">🧑‍🤝‍🧑 Passengers</a>
-        <a href="#drivers" data-view="drivers">👤 Drivers</a>
-        <a href="#approvals" data-view="approvals">✅ Approvals <span id="pendingBadge" class="badge" hidden></span></a>
-        <a href="#alerts" data-view="alerts">⚠️ Alerts <span id="alertBadge" class="badge" hidden></span></a>
+        <a href="#overview" data-view="overview" title="Overview"><i>📊</i><span class="lbl">Overview</span></a>
+        <a href="#live" data-view="live" title="Live fleet"><i>🗺</i><span class="lbl">Live fleet</span></a>
+        <a href="#trips" data-view="trips" title="Trips"><i>🧭</i><span class="lbl">Trips</span></a>
+        <a href="#passengers" data-view="passengers" title="Passengers"><i>🧑‍🤝‍🧑</i><span class="lbl">Passengers</span></a>
+        <a href="#drivers" data-view="drivers" title="Drivers"><i>👤</i><span class="lbl">Drivers</span></a>
+        <a href="#approvals" data-view="approvals" title="Approvals"><i>✅</i><span class="lbl">Approvals</span><span id="pendingBadge" class="badge" hidden></span></a>
+        <a href="#alerts" data-view="alerts" title="Alerts"><i>⚠️</i><span class="lbl">Alerts</span><span id="alertBadge" class="badge" hidden></span></a>
       </nav>
       <div class="sidebar-foot">
         <div class="seg" id="themeSeg">
@@ -75,7 +77,8 @@
 
     <main>
       <header class="topbar glass">
-        <div>
+        <button id="menuBtn" class="btn ghost icon mobile-only" aria-label="Menu">☰</button>
+        <div class="titles">
           <p class="eyebrow" id="viewEyebrow">Overview</p>
           <h2 id="viewTitle">This month</h2>
         </div>
@@ -96,12 +99,12 @@
       <div id="view-overview" class="view">
         <div class="kpis" id="kpis"></div>
         <div class="grid2">
-          <div class="glass card"><h3>Distance per day (km)</h3><canvas id="chartDaily" height="140"></canvas></div>
-          <div class="glass card"><h3>Fuel cost by department</h3><canvas id="chartDept" height="140"></canvas></div>
-          <div class="glass card"><h3>Distance by vehicle (km)</h3><canvas id="chartVehicle" height="140"></canvas></div>
-          <div class="glass card"><h3>Trips by driver</h3><canvas id="chartDriver" height="140"></canvas></div>
+          <div class="glass card"><h3>Distance per day (km)</h3><div class="chart-box"><canvas id="chartDaily"></canvas></div></div>
+          <div class="glass card"><h3>Fuel cost by department</h3><div class="chart-box"><canvas id="chartDept"></canvas></div></div>
+          <div class="glass card"><h3>Distance by vehicle (km)</h3><div class="chart-box"><canvas id="chartVehicle"></canvas></div></div>
+          <div class="glass card"><h3>Trips by driver</h3><div class="chart-box"><canvas id="chartDriver"></canvas></div></div>
         </div>
-        <div class="glass card"><h3>Latest trips</h3><div id="recentTrips"></div></div>
+        <div class="glass card"><h3>Latest trips</h3><div id="recentTrips" class="table-wrap"></div></div>
       </div>
 
       <div id="view-live" class="view" hidden>
@@ -132,7 +135,7 @@
         </div>
         <div class="grid2">
           <div class="glass card"><h3>Per passenger</h3><div id="paxSummary" class="table-wrap"></div></div>
-          <div class="glass card"><h3>Seats per day</h3><canvas id="chartPax" height="160"></canvas></div>
+          <div class="glass card"><h3>Seats per day</h3><div class="chart-box"><canvas id="chartPax"></canvas></div></div>
         </div>
         <div class="glass card"><h3>All bookings & requests</h3><div id="paxTable" class="table-wrap"></div></div>
       </div>
@@ -150,6 +153,16 @@
         <div id="alertList" class="cards"></div>
       </div>
     </main>
+
+    <!-- Phones: drawer scrim + glass bottom tab bar -->
+    <div id="scrim" class="scrim"></div>
+    <nav id="tabbar" class="tabbar glass">
+      <a href="#overview" data-view="overview"><i>📊</i><span>Overview</span></a>
+      <a href="#live" data-view="live"><i>🗺</i><span>Live</span></a>
+      <a href="#trips" data-view="trips"><i>🧭</i><span>Trips</span></a>
+      <a href="#passengers" data-view="passengers"><i>🧑‍🤝‍🧑</i><span>Passengers</span></a>
+      <button id="tabMore" type="button"><i>☰</i><span>More</span><b id="moreBadge" class="dot" hidden></b></button>
+    </nav>
   </section>
 
   <!-- Trip detail -->
