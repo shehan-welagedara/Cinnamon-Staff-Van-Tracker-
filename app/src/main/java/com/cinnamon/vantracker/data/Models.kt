@@ -20,7 +20,14 @@ enum class Role(val label: String) {
     }
 }
 
-val CATEGORIES = listOf("Bank", "Laundry", "Staff Transport", "Purchasing", "Guest Related", "Official Meeting", "Other")
+val CATEGORIES = listOf(
+    "Bank", "Laundry", "Staff Transport", "Purchasing", "Guest Related", "Official Meeting",
+    "Long-distance trip", "Delivery / Pickup", "Other",
+)
+
+/** Request kinds: people travelling, or something to collect and bring back. */
+const val KIND_PASSENGER = "PASSENGER"
+const val KIND_DELIVERY = "DELIVERY"
 
 val DEPARTMENTS = listOf(
     "Front Office", "Housekeeping", "F&B Service", "Kitchen", "Engineering", "Finance",
@@ -147,7 +154,14 @@ data class TripRequest(
     val acceptedAt: Long? = null,
     /** Who is actually travelling (may differ from the requester). */
     val passengerNames: String = "",
+    val kind: String = KIND_PASSENGER,
+    /** Deliveries: what to collect, and who to contact at the pickup point. */
+    val deliveryItems: String = "",
+    val deliveryContact: String = "",
+    /** Long trips (e.g. Colombo): when the vehicle is expected back – blocks the calendar until then. */
+    val awayUntil: Long? = null,
 ) {
+    val isDelivery get() = kind == KIND_DELIVERY
     val travellers get() = passengerNames.ifBlank { requesterName }
 
     fun toMap(): Map<String, Any?> = mapOf(
@@ -157,6 +171,7 @@ data class TripRequest(
         "status" to status.name, "joinTarget" to joinTarget, "joinTargetLabel" to joinTargetLabel,
         "approverName" to approverName, "decidedAt" to decidedAt, "decisionComment" to decisionComment,
         "tripId" to tripId, "createdAt" to createdAt, "passengerNames" to passengerNames,
+        "kind" to kind, "deliveryItems" to deliveryItems, "deliveryContact" to deliveryContact, "awayUntil" to awayUntil,
     )
 
     companion object {
@@ -182,6 +197,10 @@ data class TripRequest(
             driverName = d.str("driverName"),
             acceptedAt = d.getLong("acceptedAt"),
             passengerNames = d.str("passengerNames"),
+            kind = d.getString("kind") ?: KIND_PASSENGER,
+            deliveryItems = d.str("deliveryItems"),
+            deliveryContact = d.str("deliveryContact"),
+            awayUntil = d.getLong("awayUntil"),
         )
     }
 }
@@ -247,7 +266,11 @@ data class Trip(
     val vehicleName: String = "",
     /** Final destination of a scheduled run (e.g. staff accommodation). */
     val destination: Stop? = null,
+    /** Expected return of a long trip; the vehicle shows as away on the calendar until then. */
+    val awayUntil: Long? = null,
 ) {
+    /** Last moment this trip occupies the vehicle (for the availability calendar). */
+    val busyUntil get() = endTime ?: awayUntil ?: (plannedTime.takeIf { it > 0 } ?: startTime ?: createdAt) + 2 * 3600_000L
     val isActive get() = status == TripStatus.IN_PROGRESS
     val isOpen get() = status == TripStatus.READY || status == TripStatus.ASSIGNED
 
@@ -272,6 +295,7 @@ data class Trip(
             vehicleId = d.str("vehicleId"),
             vehicleName = d.str("vehicleName"),
             destination = Stop.from(d.get("destination")),
+            awayUntil = d.getLong("awayUntil"),
             startTime = d.getLong("startTime"),
             endTime = d.getLong("endTime"),
             distanceKm = d.dbl("distanceKm"),
@@ -407,6 +431,8 @@ data class AppSettings(
     val autoEndUnauthorizedMin: Int = 5,
     /** Seats on pre-approved scheduled runs are confirmed instantly (no GM/OM approval). */
     val autoApproveScheduled: Boolean = true,
+    /** Phones on an older app version must update before they can continue (0 = off). */
+    val minVersionCode: Int = 0,
 ) {
     val hotelSet get() = hotelLat != 0.0 || hotelLng != 0.0
 
@@ -420,7 +446,7 @@ data class AppSettings(
         "movementSpeedKmh" to movementSpeedKmh, "minGpsAccuracyM" to minGpsAccuracyM,
         "usePowerTrigger" to usePowerTrigger,
         "reasonDeadlineHour" to reasonDeadlineHour, "autoEndUnauthorizedMin" to autoEndUnauthorizedMin,
-        "autoApproveScheduled" to autoApproveScheduled,
+        "autoApproveScheduled" to autoApproveScheduled, "minVersionCode" to minVersionCode,
     )
 
     companion object {
@@ -445,6 +471,7 @@ data class AppSettings(
                 reasonDeadlineHour = d.getLong("reasonDeadlineHour")?.toInt() ?: def.reasonDeadlineHour,
                 autoEndUnauthorizedMin = d.getLong("autoEndUnauthorizedMin")?.toInt() ?: def.autoEndUnauthorizedMin,
                 autoApproveScheduled = d.getBoolean("autoApproveScheduled") ?: true,
+                minVersionCode = d.getLong("minVersionCode")?.toInt() ?: 0,
             )
         }
     }

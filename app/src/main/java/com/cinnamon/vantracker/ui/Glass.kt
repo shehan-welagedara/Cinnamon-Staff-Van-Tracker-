@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -128,6 +129,8 @@ fun GlassScaffold(
     val navInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     val topDp = with(density) { topPx.toDp() }
     val bottomDp = if (bottomBar != null) with(density) { bottomPx.toDp() } else navInset
+    // Default text/icon colour for everything on this screen (light or dark theme).
+    CompositionLocalProvider(LocalContentColor provides Brand.colors.text) {
     Box(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().hazeSource(haze)) {
             GlassBackdrop(Modifier.fillMaxSize())
@@ -140,6 +143,7 @@ fun GlassScaffold(
             }
             Box(Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = bottomDp + 12.dp)) { floatingActionButton() }
         }
+    }
     }
 }
 

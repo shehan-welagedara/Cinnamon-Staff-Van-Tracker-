@@ -20,6 +20,10 @@ import com.cinnamon.vantracker.tracking.DevicePrefs
 import kotlinx.coroutines.tasks.await
 import java.util.concurrent.TimeUnit
 
+private suspend fun settingsMin(): Int = runCatching {
+    AppSettings.from(Repo.settingsDoc.get().await()).minVersionCode
+}.getOrDefault(0)
+
 /**
  * Zero-cost notifications (no paid Cloud Functions / push server): every phone checks
  * Firestore every 15 minutes for news relevant to its user. Screens that are open
@@ -104,6 +108,19 @@ class WatchWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx,
             }
 
             Repo.runReasonDeadlineCheck(settings)
+        }
+
+        // About twice a day: tell the phone a newer app version is ready (one tap installs it).
+        if (now - DevicePrefs.getLong(ctx, "lastUpdateCheck") > 12 * 3600_000L) {
+            DevicePrefs.putLong(ctx, "lastUpdateCheck", now)
+            com.cinnamon.vantracker.data.Updater.newerRelease()?.let { r ->
+                val required = com.cinnamon.vantracker.BuildConfig.VERSION_CODE < settingsMin()
+                Notifier.show(
+                    ctx, 2900, if (required) Notifier.CH_ALERTS else Notifier.CH_REQUESTS,
+                    if (required) "Van Tracker update required" else "Van Tracker ${r.name} available",
+                    "Tap to install – your data and settings are kept.", open = "update",
+                )
+            }
         }
         return Result.success()
     }

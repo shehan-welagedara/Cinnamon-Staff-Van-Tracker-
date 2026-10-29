@@ -95,17 +95,15 @@ fun AppBar(title: String, onBack: (() -> Unit)? = null, actions: @Composable () 
                     modifier = Modifier.align(Alignment.Center).padding(horizontal = 96.dp),
                 )
             }
+            if (onBack == null) BrandLogo(
+                light = b.dark, modifier = Modifier.align(Alignment.CenterStart).padding(start = 14.dp).height(40.dp),
+            )
             Row(Modifier.align(Alignment.CenterEnd), verticalAlignment = Alignment.CenterVertically) {
                 CompositionLocalProvider(LocalContentColor provides b.accent) { actions() }
             }
         }
         if (onBack == null) {
-            // Brand hierarchy: spaced caps eyebrow → bold title.
-            Text(
-                "KANDY MYST BY CINNAMON", style = MaterialTheme.typography.bodySmall, color = b.secondary,
-                fontWeight = FontWeight.Bold, letterSpacing = 2.sp,
-                modifier = Modifier.padding(start = 20.dp, end = 20.dp),
-            )
+            // Brand hierarchy: logo (above) → bold title.
             Text(
                 title, style = MaterialTheme.typography.headlineLarge, color = b.ink, maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -115,6 +113,19 @@ fun AppBar(title: String, onBack: (() -> Unit)? = null, actions: @Composable () 
             Box(Modifier.fillMaxWidth().height(0.5.dp).background(b.separator))
         }
     }
+}
+
+/** Kandy Myst by Cinnamon logo: purple on light backgrounds, white on dark ones. */
+@Composable
+fun BrandLogo(light: Boolean, modifier: Modifier = Modifier) {
+    androidx.compose.foundation.Image(
+        painter = androidx.compose.ui.res.painterResource(
+            if (light) com.cinnamon.vantracker.R.drawable.logo_kandymyst_white else com.cinnamon.vantracker.R.drawable.logo_kandymyst_purple
+        ),
+        contentDescription = "Kandy Myst by Cinnamon",
+        contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+        modifier = modifier,
+    )
 }
 
 /** Brand glass card: 22dp radius, frosted translucent fill, bright top edge, soft purple shadow. */
@@ -147,11 +158,13 @@ fun SectionCard(
         Row(Modifier.height(IntrinsicSize.Min)) {
             if (accent != null) Box(Modifier.width(4.dp).fillMaxHeight().background(accent))
             Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp).fillMaxWidth()) {
-                if (title != null) {
-                    Text(title, style = MaterialTheme.typography.titleMedium, color = b.text)
-                    Spacer(Modifier.height(8.dp))
+                CompositionLocalProvider(LocalContentColor provides b.text) {
+                    if (title != null) {
+                        Text(title, style = MaterialTheme.typography.titleMedium, color = b.text)
+                        Spacer(Modifier.height(8.dp))
+                    }
+                    content()
                 }
-                content()
             }
         }
     }
@@ -261,12 +274,14 @@ fun Banner(text: String, color: Color, onClick: (() -> Unit)? = null) {
 /** Card holding a list of tappable rows separated by hairlines. */
 @Composable
 fun GroupCard(content: @Composable ColumnScope.() -> Unit) {
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .brandCard(Brand.colors),
-        content = content,
-    )
+    CompositionLocalProvider(LocalContentColor provides Brand.colors.text) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .brandCard(Brand.colors),
+            content = content,
+        )
+    }
 }
 
 @Composable

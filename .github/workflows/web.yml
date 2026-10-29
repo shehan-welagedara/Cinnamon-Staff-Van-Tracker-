@@ -28,10 +28,33 @@ jobs:
       - name: Write Firebase web config
         env:
           FIREBASE_WEB_CONFIG: ${{ secrets.FIREBASE_WEB_CONFIG }}
+        # Accepts the snippet exactly as Firebase shows it ("const firebaseConfig = { apiKey: ... };")
+        # or plain JSON. Fails the deploy if the secret is set but unreadable.
         run: |
-          if [ -n "$FIREBASE_WEB_CONFIG" ]; then
-            printf 'window.VT_FIREBASE_CONFIG = %s;\n' "$FIREBASE_WEB_CONFIG" > web/config.js
+          if [ -z "$FIREBASE_WEB_CONFIG" ]; then
+            echo "FIREBASE_WEB_CONFIG secret not set - dashboard will ask for the config on first visit."
+            exit 0
           fi
+          node -e '
+            const raw = process.env.FIREBASE_WEB_CONFIG;
+            // Take the object after "firebaseConfig" (skips the "import { ... }" lines of the snippet).
+            const at = raw.indexOf("firebaseConfig");
+            const a = raw.indexOf("{", at >= 0 ? at : 0);
+            let depth = 0, b = -1;
+            for (let i = a; a >= 0 && i < raw.length; i++) {
+              if (raw[i] === "{") depth++;
+              if (raw[i] === "}" && --depth === 0) { b = i; break; }
+            }
+            if (a < 0 || b < 0) { console.error("No firebaseConfig { ... } object found in FIREBASE_WEB_CONFIG"); process.exit(1); }
+            const cfg = Function("\"use strict\"; return (" + raw.slice(a, b + 1) + ");")();
+            if (!cfg.apiKey || !cfg.projectId) { console.error("FIREBASE_WEB_CONFIG needs apiKey and projectId"); process.exit(1); }
+            cfg.authDomain = cfg.authDomain || cfg.projectId + ".firebaseapp.com";
+            require("fs").writeFileSync("web/config.js", "window.VT_FIREBASE_CONFIG = " + JSON.stringify(cfg) + ";\n");
+            console.log("Firebase web config written for project " + cfg.projectId);
+          '
+
+      - name: Cache-bust dashboard files
+        run: sed -i -E "s/(config\.js|app\.js|styles\.css)\"/\1?v=${GITHUB_RUN_NUMBER}\"/g" web/index.html && grep -o 'v=[0-9]*' web/index.html | head -3
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

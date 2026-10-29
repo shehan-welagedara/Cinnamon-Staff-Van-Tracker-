@@ -28,6 +28,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Menu
@@ -70,6 +71,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.cinnamon.vantracker.data.AlertItem
 import com.cinnamon.vantracker.data.CATEGORIES
+import com.cinnamon.vantracker.data.KIND_DELIVERY
+import com.cinnamon.vantracker.data.KIND_PASSENGER
 import com.cinnamon.vantracker.data.Repo
 import com.cinnamon.vantracker.data.RequestStatus
 import com.cinnamon.vantracker.data.Schedule
@@ -92,11 +95,12 @@ fun StaffHome(s: Session) {
     val alerts by remember { Repo.alertsFlow() }.collectAsState(initial = emptyList())
     val openAlerts = alerts.count { !it.acknowledged }
     val tabs = if (s.canApprove) listOf(
-        GlassTab("Home", Icons.Filled.Home), GlassTab("Approvals", Icons.Filled.CheckCircle, pending.size),
-        GlassTab("Trips", Icons.Filled.List), GlassTab("Alerts", Icons.Filled.Notifications, openAlerts), GlassTab("More", Icons.Filled.Menu),
+        GlassTab("Home", Icons.Filled.Home), GlassTab("Calendar", Icons.Filled.DateRange),
+        GlassTab("Approvals", Icons.Filled.CheckCircle, pending.size),
+        GlassTab("Alerts", Icons.Filled.Notifications, openAlerts), GlassTab("More", Icons.Filled.Menu),
     ) else listOf(
-        GlassTab("Home", Icons.Filled.Home), GlassTab("My requests", Icons.Filled.CheckCircle),
-        GlassTab("Trips", Icons.Filled.List), GlassTab("More", Icons.Filled.Menu),
+        GlassTab("Home", Icons.Filled.Home), GlassTab("Calendar", Icons.Filled.DateRange),
+        GlassTab("My requests", Icons.Filled.CheckCircle), GlassTab("Trips", Icons.Filled.List), GlassTab("More", Icons.Filled.Menu),
     )
     val online = rememberOnline()
     val tab = s.nav.homeTab.coerceIn(0, tabs.lastIndex)
@@ -118,6 +122,7 @@ fun StaffHome(s: Session) {
             if (!online) item { Banner("Offline – showing saved data. Changes sync when back online.", WarnOrange) }
             when (label) {
                 "Home" -> homeTab(s, pending.size, openAlerts)
+                "Calendar" -> item { CalendarBody(s) }
                 "Approvals" -> approvalsList(s, pending)
                 "My requests" -> myRequestsList(s)
                 "Trips" -> tripsList(s)
@@ -133,7 +138,7 @@ private fun LazyListScope.homeTab(s: Session, pendingCount: Int, openAlerts: Int
     item { FleetCard(s) }
     if (s.canApprove && (pendingCount > 0 || openAlerts > 0)) item {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (pendingCount > 0) Button(onClick = { s.nav.homeTab = 1 }, modifier = Modifier.weight(1f)) { Text("$pendingCount to approve") }
+            if (pendingCount > 0) Button(onClick = { s.nav.homeTab = 2 }, modifier = Modifier.weight(1f)) { Text("$pendingCount to approve") }
             if (openAlerts > 0) Button(
                 onClick = { s.nav.homeTab = 3 }, modifier = Modifier.weight(1f),
                 colors = ButtonDefaults.buttonColors(containerColor = DangerRed),
@@ -273,10 +278,18 @@ fun RequestCard(r: TripRequest, s: Session, actions: @Composable () -> Unit = {}
             Chip(r.status.label, color)
         }
         Text(r.purpose, fontSize = 14.sp)
-        InfoRow("Passenger(s)", r.travellers)
-        if (r.passengerNames.isNotBlank() && r.passengerNames != r.requesterName) InfoRow("Requested by", r.requesterName)
-        InfoRow("When", TripCalc.dateTime(r.requestedTime))
-        InfoRow("Passengers", r.passengers.toString())
+        if (r.isDelivery) {
+            InfoRow("📦 Collect", r.deliveryItems.ifBlank { "–" })
+            if (r.deliveryContact.isNotBlank()) InfoRow("Contact", r.deliveryContact)
+            InfoRow("Requested by", r.requesterName)
+            InfoRow("Collect on / after", TripCalc.dateTime(r.requestedTime))
+        } else {
+            InfoRow("Passenger(s)", r.travellers)
+            if (r.passengerNames.isNotBlank() && r.passengerNames != r.requesterName) InfoRow("Requested by", r.requesterName)
+            InfoRow("When", TripCalc.dateTime(r.requestedTime))
+            r.awayUntil?.let { InfoRow("Back by", TripCalc.dateTime(it)) }
+            InfoRow("Passengers", r.passengers.toString())
+        }
         if (r.stops.isNotEmpty()) Text("Stops: " + r.stops.joinToString(" → ") { it.name }, fontSize = 13.sp)
         if (r.joinTargetLabel.isNotBlank()) Text(
             (if (r.joinTarget.startsWith("sched:")) "Seat on: " else "Wants to join: ") + r.joinTargetLabel, color = InfoBlue, fontSize = 13.sp,
@@ -343,7 +356,7 @@ private fun rememberJoinOptions(): List<Pair<String, String>> {
 }
 
 @Composable
-fun NewRequestScreen(s: Session, joinTarget: String, joinLabel: String) {
+fun NewRequestScreen(s: Session, joinTarget: String, joinLabel: String, presetTime: Long = 0, presetKind: String = "") {
     val ctx = LocalContext.current
     val schedules by remember { Repo.schedulesFlow() }.collectAsState(initial = emptyList())
     // "sched:<id>:<day>" = booking a seat on a pre-approved scheduled run.
@@ -358,10 +371,15 @@ fun NewRequestScreen(s: Session, joinTarget: String, joinLabel: String) {
         return
     }
 
-    var category by remember { mutableStateOf(CATEGORIES.first()) }
+    // Delivery / pickup: the vehicle collects something on its way (e.g. while in Colombo) and brings it to the hotel.
+    var delivery by remember { mutableStateOf(presetKind == KIND_DELIVERY) }
+    var category by remember { mutableStateOf(if (delivery) "Delivery / Pickup" else CATEGORIES.first()) }
     var purpose by remember { mutableStateOf("") }
     val stops = remember { mutableStateListOf(Stop()) }
-    var time by remember { mutableLongStateOf(System.currentTimeMillis() + 30 * 60_000) }
+    var time by remember { mutableLongStateOf(presetTime.takeIf { it > 0 } ?: (System.currentTimeMillis() + 30 * 60_000)) }
+    var awayUntil by remember { mutableStateOf<Long?>(null) }
+    var items by remember { mutableStateOf("") }
+    var contact by remember { mutableStateOf("") }
     var passengers by remember { mutableStateOf("1") }
     var passengerNames by remember { mutableStateOf(s.me.name) }
     var notes by remember { mutableStateOf("") }
@@ -370,18 +388,38 @@ fun NewRequestScreen(s: Session, joinTarget: String, joinLabel: String) {
     var targetLabel by remember { mutableStateOf(joinLabel) }
     var autoApprove by remember { mutableStateOf(false) }
 
-    Scaffold(topBar = { AppBar("Request a vehicle", onBack = { s.nav.back() }) }) { pad ->
+    Scaffold(topBar = { AppBar(if (delivery) "Request a pickup / delivery" else "Request a vehicle", onBack = { s.nav.back() }) }) { pad ->
         Column(Modifier.padding(pad).padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Picker("Category", category, CATEGORIES) { category = it }
-            OutlinedTextField(purpose, { purpose = it }, label = { Text("Business purpose") }, modifier = Modifier.fillMaxWidth())
-            SectionHeader("Destination / stops")
-            StopsEditor(stops, s, label = { if (it == 0) "Destination" else "Stop ${it + 1}" })
-            OutlinedButton(onClick = { pickDateTime(ctx, time) { time = it } }, modifier = Modifier.fillMaxWidth()) {
-                Text("Departure: ${TripCalc.dateTime(time)}")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(!delivery, { delivery = false; if (category == "Delivery / Pickup") category = CATEGORIES.first() }, label = { Text("Passengers") })
+                FilterChip(delivery, { delivery = true; category = "Delivery / Pickup" }, label = { Text("📦 Pickup / delivery") })
             }
-            OutlinedTextField(passengerNames, { passengerNames = it }, label = { Text("Passenger name(s)") }, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(passengers, { passengers = it.filter(Char::isDigit) }, label = { Text("Number of passengers") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
+            if (!delivery) Picker("Category", category, CATEGORIES.filter { it != "Delivery / Pickup" }) { category = it }
+            if (delivery) {
+                OutlinedTextField(items, { items = it }, label = { Text("What should be collected? (items, quantity)") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(purpose, { purpose = it }, label = { Text("Business reason") }, modifier = Modifier.fillMaxWidth())
+                SectionHeader("Where to collect it")
+                StopsEditor(stops, s, label = { if (it == 0) "Pickup point (shop / office address)" else "Pickup ${it + 1}" })
+                OutlinedTextField(contact, { contact = it }, label = { Text("Contact person & phone at the pickup point") }, modifier = Modifier.fillMaxWidth())
+                Text("Delivered to the hotel (${s.settings.hotelName.ifBlank { "hotel" }}) when the vehicle returns.", color = TextSecondary, fontSize = 13.sp)
+                OutlinedButton(onClick = { pickDateTime(ctx, time) { time = it } }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Collect on / after: ${TripCalc.dateTime(time)}")
+                }
+            } else {
+                OutlinedTextField(purpose, { purpose = it }, label = { Text("Business purpose") }, modifier = Modifier.fillMaxWidth())
+                SectionHeader("Destination / stops")
+                StopsEditor(stops, s, label = { if (it == 0) "Destination" else "Stop ${it + 1}" })
+                OutlinedButton(onClick = { pickDateTime(ctx, time) { time = it } }, modifier = Modifier.fillMaxWidth()) {
+                    Text("Departure: ${TripCalc.dateTime(time)}")
+                }
+                // Long trips (Colombo etc.) block the vehicle until it is back – shown on the calendar.
+                OutlinedButton(onClick = { pickDateTime(ctx, awayUntil ?: (time + 8 * 3600_000L)) { awayUntil = it.takeIf { t -> t > time } } }, modifier = Modifier.fillMaxWidth()) {
+                    Text(awayUntil?.let { "Back at the hotel: ${TripCalc.dateTime(it)}" } ?: "Set return time (long / all-day trips)")
+                }
+                OutlinedTextField(passengerNames, { passengerNames = it }, label = { Text("Passenger name(s)") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(passengers, { passengers = it.filter(Char::isDigit) }, label = { Text("Number of passengers") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
+            }
             Picker("Trip", options.firstOrNull { it.first == target }?.second ?: targetLabel.ifBlank { "New separate trip" }, options.map { it.second }) { l ->
                 val o = options.first { it.second == l }; target = o.first; targetLabel = if (o.first.isBlank()) "" else o.second
             }
@@ -390,14 +428,20 @@ fun NewRequestScreen(s: Session, joinTarget: String, joinLabel: String) {
                 Checkbox(autoApprove, { autoApprove = it }); Text("Approve immediately (my own business trip)")
             }
             Button(
-                enabled = purpose.isNotBlank() && stops.any { it.name.isNotBlank() },
+                enabled = (purpose.isNotBlank() || (delivery && items.isNotBlank())) && stops.any { it.name.isNotBlank() },
                 modifier = Modifier.fillMaxWidth().height(50.dp),
                 onClick = {
                     val r = TripRequest(
                         requesterUid = s.me.uid, requesterName = s.me.name, department = s.me.department,
-                        category = category, purpose = purpose.trim(), stops = stops.filter { it.name.isNotBlank() },
-                        requestedTime = time, passengers = passengers.toIntOrNull() ?: 1, notes = notes.trim(),
-                        joinTarget = target, joinTargetLabel = targetLabel, passengerNames = passengerNames.trim(),
+                        category = category,
+                        purpose = purpose.trim().ifBlank { if (delivery) "Collect: ${items.trim()}" else "" },
+                        stops = stops.filter { it.name.isNotBlank() }.map { if (delivery) it.copy(name = "📦 Pickup: ${it.name}") else it },
+                        requestedTime = time, passengers = if (delivery) 0 else passengers.toIntOrNull() ?: 1, notes = notes.trim(),
+                        joinTarget = target, joinTargetLabel = targetLabel,
+                        passengerNames = if (delivery) "" else passengerNames.trim(),
+                        kind = if (delivery) KIND_DELIVERY else KIND_PASSENGER,
+                        deliveryItems = items.trim(), deliveryContact = contact.trim(),
+                        awayUntil = awayUntil.takeIf { !delivery },
                     )
                     val id = Repo.submitRequest(r)
                     if (autoApprove) {
@@ -764,6 +808,7 @@ private fun MoreBody(s: Session) {
     GroupCard {
         ListRow("🗺", "Live map", last = !s.canApprove) { s.nav.go(Screen.LiveMap) }
         if (s.canApprove) {
+            ListRow("🧾", "All trips") { s.nav.go(Screen.Trips) }
             ListRow("📊", "Reports & costs") { s.nav.go(Screen.Reports) }
             ListRow("📝", "My own requests") { s.nav.go(Screen.MyRequests) }
             ListRow("⚠️", "Movements waiting for a reason", last = true) { s.nav.go(Screen.Reasons) }

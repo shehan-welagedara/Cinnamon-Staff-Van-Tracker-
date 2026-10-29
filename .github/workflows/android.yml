@@ -3,7 +3,10 @@ name: Build APK
 on:
   push:
     branches: [main]
+    # Only app changes produce a new APK release (no "update available" for web/docs edits).
+    paths-ignore: ["web/**", "reports/**", "**/*.md", "firestore.rules", ".github/workflows/web.yml"]
   pull_request:
+    paths-ignore: ["web/**", "reports/**", "**/*.md", "firestore.rules", ".github/workflows/web.yml"]
   workflow_dispatch:
 
 permissions:

@@ -229,7 +229,7 @@ object Repo {
                         "title" to "${r.category} – ${r.department}", "category" to r.category,
                         "purpose" to r.purpose, "departments" to listOf(r.department),
                         "requestIds" to listOf(r.id), "stops" to stops.map { it.toMap() },
-                        "plannedTime" to r.requestedTime, "passengers" to r.passengers,
+                        "plannedTime" to r.requestedTime, "passengers" to r.passengers, "awayUntil" to r.awayUntil,
                         "createdAt" to now(), "openedAt" to now(), "createdBy" to approver.name,
                         "driverUid" to "", "driverName" to "",
                     ) + driverFields + vehicleFields
@@ -330,6 +330,14 @@ object Repo {
         )
         batch.set(tripRef, tripData, SetOptions.merge())
         batch.commit()
+    }
+
+    /** Trips planned from [from] on (approved, scheduled or done) – for the availability calendar. */
+    fun tripsPlannedFromFlow(from: Long) = queryFlow(trips.whereGreaterThanOrEqualTo("plannedTime", from))
+        .map { s -> s?.documents?.map(Trip::from).orEmpty().filter { it.status != TripStatus.CANCELLED }.sortedBy { it.plannedTime } }
+
+    fun setMinVersion(code: Int) {
+        settingsDoc.update("minVersionCode", code)
     }
 
     fun requestsSinceFlow(from: Long) = queryFlow(requests.whereGreaterThanOrEqualTo("requestedTime", from))

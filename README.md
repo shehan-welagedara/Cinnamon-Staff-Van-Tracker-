@@ -100,7 +100,7 @@ One-time set-up:
 
 1. GitHub repo → **Settings → Pages → Build and deployment → Source: GitHub Actions.** Then **Actions → Deploy web dashboard → Run workflow**.
 2. Firebase console → **Project settings → Your apps → Add app → Web (</>)**. Register it, without Hosting, and copy the `firebaseConfig`.
-3. Open the dashboard and paste that config. It is saved in that browser only. To skip this step for everyone, add it as the GitHub secret `FIREBASE_WEB_CONFIG`, in JSON form, for example `{"apiKey":"…","authDomain":"…","projectId":"…","appId":"…"}`.
+3. Open the dashboard and paste that config. It is saved in that browser only. To skip this step for everyone, add it as the GitHub secret `FIREBASE_WEB_CONFIG`. You can paste the whole snippet Firebase shows (`const firebaseConfig = { … };`, import lines included) or just the JSON. After adding or changing the secret, run **Actions → Deploy web dashboard → Run workflow** once.
 4. Firebase console → **Authentication → Settings → Authorized domains → Add** `shehan-welagedara.github.io`.
 5. Sign in with a GM, OM or administrator account from the app.
 
@@ -110,11 +110,43 @@ When an update adds data, it may need new rules. Whenever `firestore.rules` chan
 
 ## Updating the app (keeps all data)
 
-- The app checks GitHub Releases. When a newer version exists, a blue **Update available** banner appears on the home screen; **More → About → Check for updates** does the same on demand.
-- Tap the banner, download the APK, and open it. Android installs it **over** the existing app, so the setup, sign-in, settings, and even a trip in progress are all kept.
+- Every phone checks GitHub Releases: on opening the app and, in the background, about twice a day. When a newer version exists, it shows a notification and a blue **Update available** banner. **More → About → Check for updates** does the same on demand.
+- Tap it and then **Download & install**. The app downloads the new version itself and opens Android's installer, so one tap on **Update** installs it **over** the existing app. The setup, sign-in, settings, and even a trip in progress are all kept. The first time only, Android asks you to allow Van Tracker to install updates.
+- **Making an update compulsory:** Administrator → **Settings → App updates on every phone → Require every phone to update to vX**. Phones on an older version then show only an **Update required** screen with the install button until they update. **Remove the requirement** undoes it.
+- Android never lets a sideloaded app update itself with no tap at all. Fully silent updates need the Google Play Store (a private or internal testing track, with a one-time US$25 developer account) or a device-management (MDM) tool.
+- Changes to the web dashboard only (`web/`) don't produce a new app version.
 - Every build is signed with the same key (`app/dev-signing.jks`). Don't uninstall the app before updating, and don't change the key, or phones will refuse the update.
 - Trips, requests, users and settings live in Firestore, not on the phone, so updates never touch them.
 - The Firebase connection and the Light/Dark choice are included in Android's own backup. On a reinstall with the same Google account, the phone reconnects without the setup code. Adding the `FIREBASE_*` secrets below removes the setup step entirely.
+
+## Vehicle calendar, long trips and pickups
+
+- **Calendar** tab (staff and managers; drivers: More → Vehicle calendar): a month view of the vehicles. Blue dot = booked trip, orange day = vehicle away on a long trip (6 h or more, e.g. Colombo), purple dot = regular scheduled run.
+- Tap a day to see what is planned:
+  - **I'm going too** on a planned trip asks to join it. The approver combines it with that trip.
+  - **📦 Bring something** asks the vehicle to collect something on that trip and bring it to the hotel.
+  - **Book my seat** on a regular run.
+  - **Request a vehicle for this day** or **Request a pickup / delivery**, with the date already filled in.
+- When requesting a long trip, set **Back at the hotel** (the return time). The calendar then shows the vehicle as away until then.
+- A pickup / delivery request records what to collect, the pickup point (search or map), and a contact person. The driver sees it as a "📦 Pickup" stop on the route. It appears in reports as a pickup / delivery.
+
+## Monthly email report (Excel)
+
+`reports/MonthlyReport.gs` is a free Google Apps Script. It can run in **any** Google account, for example kandymystservices@gmail.com, not only the one that owns the Firebase project. On the 1st of each month it emails last month's report: a summary in the email and an Excel attachment with Summary, Trips, Passengers, Drivers and Vehicles sheets. A copy is also kept in that account's Google Drive.
+
+1. In the app, register a user for the report, e.g. `vanreports@kandymyst.com` (any email, it never receives mail). Approve it in **Users & roles** as **HOD** (read-only is enough).
+2. Sign in to Google as kandymystservices@gmail.com → **script.google.com → New project**. Paste the contents of `reports/MonthlyReport.gs`.
+3. **Project settings (⚙) → Script properties**, add:
+   - `FIREBASE_API_KEY`: the `apiKey` from the web config
+   - `FIREBASE_PROJECT_ID`: the `projectId`
+   - `REPORT_EMAIL` and `REPORT_PASSWORD`: the report user from step 1
+   - `RECIPIENTS`: comma-separated, e.g. `gm@…, om@…`
+   - optional: `CURRENCY` (default LKR)
+   - optional: `REFERER` (e.g. `https://shehan-welagedara.github.io/`), only if the API key is restricted to websites
+4. Select **testNow** → **Run**. Allow the permissions (Gmail, Sheets, Drive). Last month's report arrives straight away.
+5. Select **setupTrigger** → **Run** once. From then on it is sent automatically on the 1st of every month at about 07:00.
+
+Free Gmail accounts can send up to 100 emails a day from Apps Script, far more than needed.
 
 ## Maps
 

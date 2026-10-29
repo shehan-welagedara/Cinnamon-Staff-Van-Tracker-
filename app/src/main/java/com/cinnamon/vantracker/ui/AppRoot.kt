@@ -78,7 +78,8 @@ val AppScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 sealed interface Screen {
     data object Home : Screen
     data class TripDetail(val id: String) : Screen
-    data class NewRequest(val joinTarget: String = "", val joinLabel: String = "") : Screen
+    data class NewRequest(val joinTarget: String = "", val joinLabel: String = "", val presetTime: Long = 0, val kind: String = "") : Screen
+    data object Calendar : Screen
     data object ActiveTrip : Screen
     data object Reasons : Screen
     data object FuelEntry : Screen
@@ -175,12 +176,19 @@ fun AppRoot(openRequest: String, onOpenHandled: () -> Unit) {
                                 "alerts" -> if (session.canApprove) nav.go(Screen.Alerts)
                                 "reasons" -> nav.go(Screen.Reasons)
                                 "requests" -> nav.go(Screen.MyRequests)
+                                "update" -> UpdateCache.dialog = true
                             }
                             onOpenHandled()
                         }
                     }
                     BackHandler(enabled = nav.stack.size > 1) { nav.back() }
-                    ScreenHost(session)
+                    if (com.cinnamon.vantracker.BuildConfig.VERSION_CODE < settings.minVersionCode) {
+                        // Administrator requires a newer version on every phone.
+                        RequiredUpdateScreen(settings.minVersionCode)
+                    } else {
+                        ScreenHost(session)
+                        UpdateDialogHost()
+                    }
                 }
             }
         }
@@ -192,7 +200,8 @@ private fun ScreenHost(s: Session) {
     when (val screen = s.nav.top) {
         Screen.Home -> if (s.me.isDriver) DriverHome(s) else StaffHome(s)
         is Screen.TripDetail -> TripDetailScreen(s, screen.id)
-        is Screen.NewRequest -> NewRequestScreen(s, screen.joinTarget, screen.joinLabel)
+        is Screen.NewRequest -> NewRequestScreen(s, screen.joinTarget, screen.joinLabel, screen.presetTime, screen.kind)
+        Screen.Calendar -> CalendarScreen(s)
         Screen.ActiveTrip -> ActiveTripScreen(s)
         Screen.Reasons -> ReasonsScreen(s)
         Screen.FuelEntry -> FuelEntryScreen(s)
@@ -233,12 +242,8 @@ private fun Header(title: String, subtitle: String) {
                 .background(Color(0xFF9A2580))
         )
         Column(Modifier.padding(24.dp)) {
-            Box(Modifier.size(56.dp).clip(RoundedCornerShape(16.dp)).background(Color.White.copy(alpha = 0.14f)), contentAlignment = Alignment.Center) {
-                Image(painterResource(R.drawable.ic_launcher_foreground), null, modifier = Modifier.size(56.dp))
-            }
-            Spacer(Modifier.height(18.dp))
-            Text("KANDY MYST BY CINNAMON", style = MaterialTheme.typography.bodySmall, letterSpacing = 2.sp,
-                color = Color.White.copy(alpha = 0.85f), fontWeight = FontWeight.Bold)
+            BrandLogo(light = true, modifier = Modifier.height(72.dp))
+            Spacer(Modifier.height(14.dp))
             Text(title, style = MaterialTheme.typography.headlineLarge, color = Color.White)
             Text(subtitle, color = Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.bodyMedium)
         }

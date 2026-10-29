@@ -365,6 +365,7 @@ fun DriverHome(s: Session) {
                 SectionHeader("Driver")
                 GroupCard {
                     ListRow("⛽", "Fuel fill-up") { s.nav.go(Screen.FuelEntry) }
+                    ListRow("📅", "Vehicle calendar") { s.nav.go(Screen.Calendar) }
                     ListRow("🗂", "Trip history") { s.nav.go(Screen.Trips) }
                     ListRow("📱", "Driver phone setup") { s.nav.go(Screen.DriverSetup) }
                     ListRow("🚪", "Sign out", last = true, tint = DangerRed) { menu = true }

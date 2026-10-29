@@ -45,6 +45,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -172,6 +173,9 @@ fun AdminSettingsScreen(s: Session) {
             OutlinedTextField(deadline, { deadline = it }, label = { Text("Reason deadline hour (0-23)") }, keyboardOptions = num, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(autoEnd, { autoEnd = it }, label = { Text("Auto-end recording after parked (min)") }, keyboardOptions = num, modifier = Modifier.fillMaxWidth())
 
+            SectionHeader("App updates on every phone")
+            AppUpdatesAdmin(cur.minVersionCode)
+
             if (msg.isNotBlank()) Text(msg, color = if (msg.startsWith("Saved")) OkGreen else DangerRed)
             Button(modifier = Modifier.fillMaxWidth().height(50.dp), onClick = {
                 val ns = AppSettings(
@@ -187,6 +191,7 @@ fun AdminSettingsScreen(s: Session) {
                     usePowerTrigger = power, autoApproveScheduled = autoRuns,
                     reasonDeadlineHour = (deadline.toIntOrNull() ?: cur.reasonDeadlineHour).coerceIn(0, 23),
                     autoEndUnauthorizedMin = (autoEnd.toIntOrNull() ?: cur.autoEndUnauthorizedMin).coerceIn(1, 120),
+                    minVersionCode = cur.minVersionCode,
                 )
                 Repo.saveSettings(ns)
                 msg = "Saved ✔ New fuel rates apply to trips ending from now on."
@@ -568,4 +573,31 @@ private fun exportCsv(ctx: Context, trips: List<Trip>, currency: String, month: 
         Intent(Intent.ACTION_SEND).setType("text/csv").putExtra(Intent.EXTRA_STREAM, uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION),
         "Export trips",
     ))
+}
+
+/**
+ * Phones are told about new versions automatically (banner + notification, one-tap install).
+ * The administrator can also make a version compulsory: older phones then show only an
+ * "Update required" screen until they install it.
+ */
+@Composable
+private fun AppUpdatesAdmin(minVersion: Int) {
+    LaunchedEffect(Unit) { if (!UpdateCache.checked) UpdateCache.check() }
+    var latest by remember { mutableStateOf<com.cinnamon.vantracker.data.Updater.Release?>(null) }
+    LaunchedEffect(Unit) { latest = com.cinnamon.vantracker.data.Updater.latest() }
+    Text(
+        "Every phone checks for new versions and offers a one-tap install (data is kept). " +
+            "To make sure nobody stays on an old version, require the latest one.",
+        fontSize = 13.sp, color = TextSecondary,
+    )
+    InfoRow("This phone", com.cinnamon.vantracker.data.Updater.currentVersion)
+    InfoRow("Latest published", latest?.name ?: "checking…")
+    InfoRow("Required on all phones", if (minVersion > 0) "v1.0.$minVersion or newer" else "not required")
+    val l = latest
+    if (l != null && l.versionCode > minVersion) {
+        OutlinedButton(onClick = { Repo.setMinVersion(l.versionCode) }, modifier = Modifier.fillMaxWidth()) {
+            Text("Require every phone to update to ${l.name}")
+        }
+    }
+    if (minVersion > 0) TextButton(onClick = { Repo.setMinVersion(0) }) { Text("Remove the requirement") }
 }
