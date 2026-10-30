@@ -96,6 +96,28 @@ It has these pages:
 - **Approvals:** approve or reject requests.
 - **Alerts:** view and acknowledge them.
 
+Administrators also get an **Administration** section:
+
+- **Users & access:** approve or decline sign-ups, add accounts (with a temporary password), edit name, phone, department and role, give or remove administrator rights, deactivate or reactivate, send password reset emails, and export to CSV. You can't remove your own admin rights, so at least one administrator always remains.
+- **Vehicles:** add and edit vehicles (plate, type, seats, fuel, km per litre, notes) and mark them out of service.
+- **Scheduled runs:** create, edit, pause or delete recurring runs. Days, time and the destination are picked on a map. Stops along the way are still edited in the app.
+- **App settings:**
+  - Fuel prices and km per litre.
+  - Hotel location (pick on a map) and geofence.
+  - Seat auto-confirmation and tracking thresholds.
+  - Requiring every phone to update.
+  - An **announcement** banner shown on every phone (app 1.0.11+).
+- **Email reports:**
+  - Recipients, CC, subject, message, monthly or weekly, day and time.
+  - Which Excel sheets to include.
+  - **Send now** (optionally to a test address).
+  - Whether the report script is connected, and the history of sent reports.
+- **Audit log & backup:** every administrator change, with who and when; it can't be edited. A one-click full backup of the database as JSON.
+
+The dashboard can't set a password directly. Firebase only allows that from a server, which the free plan doesn't include. Instead, it sends a reset link, or you create the account with a temporary password.
+
+The sign-in screen also has **Forgot password?**.
+
 One-time set-up:
 
 1. GitHub repo → **Settings → Pages → Build and deployment → Source: GitHub Actions.** Then **Actions → Deploy web dashboard → Run workflow**.
@@ -106,7 +128,7 @@ One-time set-up:
 
 ## Firestore rules
 
-When an update adds data, it may need new rules. Whenever `firestore.rules` changes in this repo, copy it again into **Firebase console → Firestore Database → Rules → Publish**. Version 1.0.6+ needs this for driver duty logs; 1.0.7+ for vehicles and the live fleet map; 1.0.8+ for booking seats on scheduled runs.
+When an update adds data, it may need new rules. Whenever `firestore.rules` changes in this repo, copy it again into **Firebase console → Firestore Database → Rules → Publish**. Version 1.0.6+ needs this for driver duty logs; 1.0.7+ for vehicles and the live fleet map; 1.0.8+ for booking seats on scheduled runs; the dashboard's audit log and email report status need the rules from 30 Oct 2026 (`audit`, `reportRuns`).
 
 ## Updating the app (keeps all data)
 
@@ -130,21 +152,26 @@ When an update adds data, it may need new rules. Whenever `firestore.rules` chan
 - When requesting a long trip, set **Back at the hotel** (the return time). The calendar then shows the vehicle as away until then.
 - A pickup / delivery request records what to collect, the pickup point (search or map), and a contact person. The driver sees it as a "📦 Pickup" stop on the route. It appears in reports as a pickup / delivery.
 
-## Monthly email report (Excel)
+## Email reports (Excel)
 
-`reports/MonthlyReport.gs` is a free Google Apps Script. It can run in **any** Google account, for example kandymystservices@gmail.com, not only the one that owns the Firebase project. On the 1st of each month it emails last month's report: a summary in the email and an Excel attachment with Summary, Trips, Passengers, Drivers and Vehicles sheets. A copy is also kept in that account's Google Drive.
+`reports/MonthlyReport.gs` is a free Google Apps Script. It can run in **any** Google account, for example kandymystservices@gmail.com, not only the one that owns the Firebase project.
 
-1. In the app, register a user for the report, e.g. `vanreports@kandymyst.com` (any email, it never receives mail). Approve it in **Users & roles** as **HOD** (read-only is enough).
-2. Sign in to Google as kandymystservices@gmail.com → **script.google.com → New project**. Paste the contents of `reports/MonthlyReport.gs`.
+- It checks every hour and sends the report on the schedule set in the dashboard under **Administration → Email reports** (monthly or weekly, day and time, recipients, sheets).
+- The email has a summary, and the Excel file is attached: Summary, Trips, Passengers, Drivers, Vehicles and Fuel log.
+- A copy is kept in that account's Google Drive.
+
+1. In the dashboard (**Users & access → Add user**), create a user for the report, e.g. `vanreports@kandymyst.com`, role **Head of Department**.
+2. Sign in to Google as kandymystservices@gmail.com → **script.google.com → New project**. Paste the contents of `reports/MonthlyReport.gs`. If you pasted an earlier version, replace all of it.
 3. **Project settings (⚙) → Script properties**, add:
    - `FIREBASE_API_KEY`: the `apiKey` from the web config
    - `FIREBASE_PROJECT_ID`: the `projectId`
    - `REPORT_EMAIL` and `REPORT_PASSWORD`: the report user from step 1
-   - `RECIPIENTS`: comma-separated, e.g. `gm@…, om@…`
-   - optional: `CURRENCY` (default LKR)
+   - optional: `TIMEZONE` (default Asia/Colombo)
    - optional: `REFERER` (e.g. `https://shehan-welagedara.github.io/`), only if the API key is restricted to websites
-4. Select **testNow** → **Run**. Allow the permissions (Gmail, Sheets, Drive). Last month's report arrives straight away.
-5. Select **setupTrigger** → **Run** once. From then on it is sent automatically on the 1st of every month at about 07:00.
+4. Select **testNow** → **Run**. Allow the permissions (Gmail, Sheets, Drive, external requests). The previous month's report is sent to the dashboard's recipients.
+5. Select **setupTrigger** → **Run** once. The dashboard's report status turns **Connected**.
+
+From then on, everything is managed in the dashboard. **Send now** is picked up within the hour, and every run (sent or failed) is listed there.
 
 Free Gmail accounts can send up to 100 emails a day from Apps Script, far more than needed.
 

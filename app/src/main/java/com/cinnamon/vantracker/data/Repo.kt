@@ -70,6 +70,16 @@ object Repo {
     }
 
     fun settingsFlow() = docFlow(settingsDoc).map { AppSettings.from(it) }
+
+    /** Message an administrator posts from the web dashboard for every app user (config/announcement). */
+    data class Announcement(val message: String, val level: String, val until: Long)
+
+    fun announcementFlow() = docFlow(db.collection("config").document("announcement")).map { d ->
+        val msg = d?.getString("message").orEmpty()
+        val until = d?.getLong("until") ?: 0L
+        if (d == null || msg.isBlank() || d.getBoolean("active") == false || (until > 0 && until < now())) null
+        else Announcement(msg, d.getString("level") ?: "info", until)
+    }
     fun liveAllFlow() = queryFlow(live).map { s -> s?.documents?.map { LiveStatus.from(it) }.orEmpty().filter { it.updatedAt > 0 } }
 
     fun vehiclesFlow() = queryFlow(vehicles).map { s -> s?.documents?.map(Vehicle::from).orEmpty().sortedBy { it.name } }

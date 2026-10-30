@@ -248,6 +248,7 @@ fun DriverHome(s: Session) {
         }
     }) { pad ->
         LazyColumn(Modifier.fillMaxSize(), contentPadding = pad) {
+            item { AnnouncementBanner() }
             item { UpdateBanner() }
             message?.let { (text, err) -> item { Banner(text, if (err) DangerRed else OkGreen) { message = null } } }
             if (!online) item { Banner("Offline – trips are still recorded and sync automatically. Accepting new trips needs internet.", WarnOrange) }

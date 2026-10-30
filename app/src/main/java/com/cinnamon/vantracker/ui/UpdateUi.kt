@@ -16,6 +16,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -54,6 +55,14 @@ fun UpdateBanner() {
     Banner("Update ${r.name} is ready. Tap to install – your data and settings are kept.", InfoBlue) {
         UpdateCache.dialog = true
     }
+}
+
+/** Announcement from the administrator (posted on the web dashboard). */
+@Composable
+fun AnnouncementBanner() {
+    val a by remember { com.cinnamon.vantracker.data.Repo.announcementFlow() }.collectAsState(initial = null)
+    val x = a ?: return
+    Banner("📣 " + x.message, if (x.level == "urgent") DangerRed else if (x.level == "warn") WarnOrange else InfoBlue)
 }
 
 /** The update dialog lives at the app root so it survives scrolling and screen changes. */

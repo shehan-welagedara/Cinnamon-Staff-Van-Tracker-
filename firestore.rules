@@ -108,6 +108,19 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
+    // Administrator actions from the web dashboard (append-only).
+    match /audit/{id} {
+      allow read: if isManager();
+      allow create: if isAdmin() && request.resource.data.byUid == request.auth.uid;
+    }
+
+    // Monthly email report: run history and heartbeat, written by the report script's user.
+    match /reportRuns/{id} {
+      allow read: if isManager();
+      allow create, update: if active();
+      allow delete: if isAdmin();
+    }
+
     match /fuelLogs/{id} {
       allow read: if active();
       allow create: if isDriver() || isAdmin();

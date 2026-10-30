@@ -118,6 +118,7 @@ fun StaffHome(s: Session) {
     ) { pad ->
         // Content scrolls beneath the glass bars, so they blur it.
         LazyColumn(Modifier.fillMaxSize(), contentPadding = pad) {
+            item { AnnouncementBanner() }
             item { UpdateBanner() }
             if (!online) item { Banner("Offline – showing saved data. Changes sync when back online.", WarnOrange) }
             when (label) {

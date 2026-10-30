@@ -44,6 +44,7 @@
         <label>Password<input id="password" type="password" autocomplete="current-password" required></label>
         <p id="loginError" class="error"></p>
         <button class="btn primary" type="submit">Sign in</button>
+        <button id="forgotBtn" class="btn link" type="button">Forgot password?</button>
       </form>
       <button id="resetConfig" class="btn link">Change Firebase connection</button>
     </div>
@@ -65,6 +66,15 @@
         <a href="#drivers" data-view="drivers" title="Drivers"><i>👤</i><span class="lbl">Drivers</span></a>
         <a href="#approvals" data-view="approvals" title="Approvals"><i>✅</i><span class="lbl">Approvals</span><span id="pendingBadge" class="badge" hidden></span></a>
         <a href="#alerts" data-view="alerts" title="Alerts"><i>⚠️</i><span class="lbl">Alerts</span><span id="alertBadge" class="badge" hidden></span></a>
+        <div id="adminNav" class="nav-group" hidden>
+          <p class="eyebrow nav-head lbl">Administration</p>
+          <a href="#users" data-view="users" title="Users & access"><i>👥</i><span class="lbl">Users & access</span><span id="usersBadge" class="badge" hidden></span></a>
+          <a href="#vehicles" data-view="vehicles" title="Vehicles"><i>🚐</i><span class="lbl">Vehicles</span></a>
+          <a href="#schedules" data-view="schedules" title="Scheduled runs"><i>🔁</i><span class="lbl">Scheduled runs</span></a>
+          <a href="#settings" data-view="settings" title="App settings"><i>⚙️</i><span class="lbl">App settings</span></a>
+          <a href="#reports" data-view="reports" title="Email reports"><i>✉️</i><span class="lbl">Email reports</span></a>
+          <a href="#audit" data-view="audit" title="Audit log & backup"><i>🛡</i><span class="lbl">Audit & backup</span></a>
+        </div>
       </nav>
       <div class="sidebar-foot">
         <div class="seg" id="themeSeg">
@@ -152,6 +162,154 @@
       <div id="view-alerts" class="view" hidden>
         <div id="alertList" class="cards"></div>
       </div>
+      <!-- Administration (administrators only) -->
+      <div id="view-users" class="view" hidden>
+        <div class="glass card filters">
+          <input id="uSearch" placeholder="Search name, email, phone, department…">
+          <select id="uRole"><option value="">All roles</option><option value="DRIVER">Drivers</option><option value="HOD">Heads of Department</option><option value="GM">General Manager</option><option value="OM">Operations Manager</option><option value="ADMIN">Administrator role</option><option value="ADMINFLAG">Anyone with admin rights</option></select>
+          <select id="uStatus"><option value="">Any status</option><option value="pending">Waiting for approval</option><option value="active">Active</option><option value="inactive">Deactivated</option></select>
+          <button id="uAdd" class="btn ok">＋ Add user</button>
+          <button id="uCsv" class="btn ghost">⬇ CSV</button>
+        </div>
+        <div id="uPending"></div>
+        <div class="glass card"><div id="uTable" class="table-wrap"></div></div>
+        <p class="muted small">Reset password emails the person a link to choose a new password. Deactivated accounts can't use the app or the dashboard, but their trips and history are kept.</p>
+      </div>
+
+      <div id="view-vehicles" class="view" hidden>
+        <div class="glass card row"><p class="muted" style="margin:0">Vehicles drivers choose from when starting a ride. Fuel cost uses each vehicle's km per litre.</p><button id="vAdd" class="btn ok">＋ Add vehicle</button></div>
+        <div class="glass card"><div id="vTable" class="table-wrap"></div></div>
+      </div>
+
+      <div id="view-schedules" class="view" hidden>
+        <div class="glass card row"><p class="muted" style="margin:0">Recurring pre-approved runs (e.g. night staff transport). Staff book seats on them in the app.</p><button id="scAdd" class="btn ok">＋ New run</button></div>
+        <div class="glass card"><div id="scTable" class="table-wrap"></div></div>
+      </div>
+
+      <div id="view-settings" class="view" hidden>
+        <div class="glass card">
+          <div class="row"><h3>📣 Announcement to all app users</h3><div id="annStatus"></div></div>
+          <form id="annForm" class="admin-form">
+            <label>Message<textarea name="message" rows="3" maxlength="300" placeholder="e.g. The staff van is at the service station on Friday – use the hotel car."></textarea></label>
+            <div class="grid-3f">
+              <label>Style<select name="level"><option value="info">Information (blue)</option><option value="warn">Important (orange)</option><option value="urgent">Urgent (red)</option></select></label>
+              <label>Show until (optional)<input type="date" name="until"></label>
+              <label class="check-row inline"><input type="checkbox" name="active" checked> <span>Show now</span></label>
+            </div>
+            <div class="btn-row"><button type="button" id="annSave" class="btn ok">Publish</button><button type="button" id="annClear" class="btn ghost">Remove</button></div>
+            <p class="muted small">Appears at the top of the app's home screen on every phone (app v1.0.11 or newer).</p>
+          </form>
+        </div>
+        <div class="grid2">
+          <div class="glass card"><h3>⛽ Fuel & costs</h3>
+            <form id="setFuelForm" class="admin-form">
+              <div class="grid-2f">
+                <label>Diesel price per litre<input name="fuelPricePerLiter" type="number" step="0.01" min="0"></label>
+                <label>Petrol price per litre<input name="petrolPricePerLiter" type="number" step="0.01" min="0"></label>
+                <label>Default km per litre<input name="kmPerLiter" type="number" step="0.1" min="0.1"></label>
+                <label>GPS distance correction %<input name="distanceCorrectionPct" type="number" step="0.1"></label>
+                <label>Currency<input name="currency" maxlength="6"></label>
+              </div>
+              <p class="muted small">New prices apply to trips that finish from now on.</p>
+              <button type="button" id="setFuelSave" class="btn ok">Save</button>
+            </form>
+          </div>
+          <div class="glass card"><h3>🏨 Hotel location</h3>
+            <form id="setHotelForm" class="admin-form">
+              <label>Hotel name<input name="hotelName"></label>
+              <div class="grid-2f">
+                <label>Latitude<input name="hotelLat" type="number" step="0.000001"></label>
+                <label>Longitude<input name="hotelLng" type="number" step="0.000001"></label>
+                <label>Geofence radius (m)<input name="geofenceRadiusM" type="number" min="20" step="10"></label>
+              </div>
+              <div class="btn-row"><button type="button" id="hotelMapBtn" class="btn ghost">📍 Pick on map</button><button type="button" id="setHotelSave" class="btn ok">Save</button></div>
+            </form>
+          </div>
+          <div class="glass card"><h3>🧭 Requests & tracking</h3>
+            <form id="setTrackingForm" class="admin-form">
+              <label class="check-row"><input type="checkbox" name="autoApproveScheduled"> <span>Confirm seats on scheduled runs instantly (no GM/OM approval)</span></label>
+              <div class="grid-2f">
+                <label>Reason deadline (hour 0–23)<input name="reasonDeadlineHour" type="number" min="0" max="23"></label>
+                <label>Auto-end unapproved recording after (min)<input name="autoEndUnauthorizedMin" type="number" min="1" max="120"></label>
+                <label>Movement speed threshold (km/h)<input name="movementSpeedKmh" type="number" step="0.5" min="1"></label>
+                <label>Ignore GPS fixes worse than (m)<input name="minGpsAccuracyM" type="number" min="5"></label>
+              </div>
+              <label class="check-row"><input type="checkbox" name="usePowerTrigger"> <span>Dedicated vehicle phones: charger = ignition signal</span></label>
+              <button type="button" id="setTrackingSave" class="btn ok">Save</button>
+            </form>
+          </div>
+          <div class="glass card"><h3>📲 App version on every phone</h3>
+            <p class="muted small">Phones get new versions automatically with a one-tap install. Make an update compulsory so no phone stays on an old version.</p>
+            <div id="verInfo"></div>
+            <div class="btn-row"><button type="button" id="verRequire" class="btn ok" hidden>Require</button><button type="button" id="verClear" class="btn ghost" hidden>Remove the requirement</button></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="view-reports" class="view" hidden>
+        <div class="glass card"><h3>Status</h3><div id="repStatus"></div></div>
+        <div class="grid2">
+          <div class="glass card"><h3>Schedule & recipients</h3>
+            <form id="repForm" class="admin-form">
+              <label class="check-row"><input type="checkbox" name="enabled"> <span>Send the report automatically</span></label>
+              <div class="grid-3f">
+                <label>How often<select name="frequency" id="repFreq"><option value="monthly">Monthly</option><option value="weekly">Weekly</option></select></label>
+                <label id="repDomWrap">Day of the month<select name="dayOfMonth"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option><option value="9">9</option><option value="10">10</option><option value="11">11</option><option value="12">12</option><option value="13">13</option><option value="14">14</option><option value="15">15</option><option value="16">16</option><option value="17">17</option><option value="18">18</option><option value="19">19</option><option value="20">20</option><option value="21">21</option><option value="22">22</option><option value="23">23</option><option value="24">24</option><option value="25">25</option><option value="26">26</option><option value="27">27</option><option value="28">28</option></select></label>
+                <label id="repDowWrap" hidden>Day of the week<select name="dayOfWeek"><option value="1">Monday</option><option value="2">Tuesday</option><option value="3">Wednesday</option><option value="4">Thursday</option><option value="5">Friday</option><option value="6">Saturday</option><option value="7">Sunday</option></select></label>
+                <label>Time<select name="hour"><option value="0">00:00</option><option value="1">01:00</option><option value="2">02:00</option><option value="3">03:00</option><option value="4">04:00</option><option value="5">05:00</option><option value="6">06:00</option><option value="7">07:00</option><option value="8">08:00</option><option value="9">09:00</option><option value="10">10:00</option><option value="11">11:00</option><option value="12">12:00</option><option value="13">13:00</option><option value="14">14:00</option><option value="15">15:00</option><option value="16">16:00</option><option value="17">17:00</option><option value="18">18:00</option><option value="19">19:00</option><option value="20">20:00</option><option value="21">21:00</option><option value="22">22:00</option><option value="23">23:00</option></select></label>
+              </div>
+              <label>To (comma-separated)<input name="recipients" placeholder="gm@…, om@…"></label>
+              <label>CC (optional)<input name="cc"></label>
+              <label>Subject<input name="subject"></label>
+              <p class="muted small" style="margin-top:-8px">{period} becomes e.g. "October 2026"; {frequency} becomes monthly / weekly.</p>
+              <label>Message at the top of the email (optional)<textarea name="message" rows="3"></textarea></label>
+              <label>Sheets in the Excel file</label>
+              <div class="checks">
+                <label class="check-row"><input type="checkbox" name="sh_trips"> <span>Trips</span></label>
+                <label class="check-row"><input type="checkbox" name="sh_passengers"> <span>Passengers & requests</span></label>
+                <label class="check-row"><input type="checkbox" name="sh_drivers"> <span>Drivers</span></label>
+                <label class="check-row"><input type="checkbox" name="sh_vehicles"> <span>Vehicles</span></label>
+                <label class="check-row"><input type="checkbox" name="sh_fuel"> <span>Fuel fill-ups</span></label>
+              </div>
+              <p class="muted small">The Summary sheet is always included. Monthly reports cover the previous calendar month, weekly reports the previous Monday–Sunday.</p>
+              <button type="button" id="repSave" class="btn ok">Save report settings</button>
+            </form>
+          </div>
+          <div>
+            <div class="glass card"><h3>Send now</h3>
+              <div class="grid-2f">
+                <label>Period<select id="repNowPeriod"><option value="previous">Previous month / week</option><option value="current">This month / week so far</option></select></label>
+                <label>Send to (optional – leave empty for the recipients)<input id="repNowTo" type="email" placeholder="me@…"></label>
+              </div>
+              <button type="button" id="repSendNow" class="btn ok">Send report now</button>
+              <p class="muted small">The report script picks this up within the hour.</p>
+            </div>
+            <div class="glass card"><h3>Setup (once)</h3>
+              <ol class="steps">
+                <li>Add a user for the report under <b>Users & access</b> (role Head of Department), e.g. vanreports@kandymyst.com.</li>
+                <li>Sign in to Google as <b>kandymystservices@gmail.com</b> → <a href="https://script.google.com" target="_blank" rel="noopener">script.google.com</a> → New project → paste <a href="https://github.com/shehan-welagedara/Cinnamon-Staff-Van-Tracker-/blob/main/reports/MonthlyReport.gs" target="_blank" rel="noopener">MonthlyReport.gs</a>.</li>
+                <li>Project settings → Script properties: FIREBASE_API_KEY, FIREBASE_PROJECT_ID, REPORT_EMAIL, REPORT_PASSWORD.</li>
+                <li>Run <b>testNow</b> (allow the permissions), then run <b>setupTrigger</b> once. The status above turns "Connected".</li>
+              </ol>
+            </div>
+          </div>
+        </div>
+        <div class="glass card"><h3>Sent reports</h3><div id="repRuns" class="table-wrap"></div></div>
+      </div>
+
+      <div id="view-audit" class="view" hidden>
+        <div class="grid2">
+          <div class="glass card"><h3>Backup</h3>
+            <p class="muted small">Downloads every user, vehicle, run, setting, trip, request, alert and log as one JSON file. Keep it somewhere safe (it contains staff names and phone numbers). GPS route points are not included.</p>
+            <button id="backupBtn" class="btn ok">⬇ Download full backup (JSON)</button>
+          </div>
+          <div class="glass card"><h3>About the audit log</h3>
+            <p class="muted small">Every change made by an administrator in this dashboard is recorded here, with who and when: users, roles, passwords, vehicles, runs, settings, announcements and reports. Entries cannot be edited or deleted.</p>
+          </div>
+        </div>
+        <div class="glass card filters"><input id="auSearch" placeholder="Search person, action, details…"><button id="auCsv" class="btn ghost">⬇ CSV</button></div>
+        <div class="glass card"><div id="auTable" class="table-wrap"></div></div>
+      </div>
     </main>
 
     <!-- Phones: drawer scrim + glass bottom tab bar -->
@@ -170,6 +328,16 @@
     <div class="dialog-head"><h3 id="tdTitle">Trip</h3><button class="btn ghost" id="tdClose">✕</button></div>
     <div id="tdMap" class="map"></div>
     <div id="tdBody"></div>
+  </dialog>
+
+  <!-- Shared edit dialog (administration) -->
+  <dialog id="editDialog" class="glass narrow-dialog">
+    <form id="edForm" method="dialog">
+      <div class="dialog-head"><h3 id="edTitle">Edit</h3><button class="btn ghost" id="edCancel" type="button" aria-label="Close">✕</button></div>
+      <div id="edBody"></div>
+      <p id="edError" class="error"></p>
+      <div class="btn-row end"><button class="btn ok" id="edSave" type="submit">Save</button></div>
+    </form>
   </dialog>
 
   <script type="module" src="app.js"></script>

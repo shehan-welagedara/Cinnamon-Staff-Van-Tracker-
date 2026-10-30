@@ -3,12 +3,13 @@
 // active GM / OM / administrator accounts can open the dashboard).
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
 import {
-  getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut,
+  getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordResetEmail,
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import {
   getFirestore, collection, doc, getDoc, getDocs, onSnapshot, query, where, orderBy, limit,
   updateDoc, writeBatch,
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+import { ADMIN_VIEWS, initAdmin } from "./admin.js";
 
 window.__vtReady = true;
 const $ = (id) => document.getElementById(id);
@@ -168,6 +169,12 @@ function start() {
     catch (err) { $("loginError").textContent = err.message.replace("Firebase: ", ""); }
   };
   $("logout").onclick = () => signOut(auth);
+  $("forgotBtn").onclick = async () => {
+    const email = $("email").value.trim() || prompt("Your email address:", "")?.trim();
+    if (!email) return;
+    try { await sendPasswordResetEmail(auth, email); $("loginError").textContent = `Password reset email sent to ${email} (check spam).`; }
+    catch (err) { $("loginError").textContent = err.message.replace("Firebase: ", ""); }
+  };
   onAuthStateChanged(auth, async (u) => {
     if (!u) { show("login"); return; }
     const p = await getDoc(doc(db, "users", u.uid)).catch(() => null);
@@ -180,7 +187,10 @@ function start() {
     S.me = me;
     $("whoami").textContent = `${me.name} · ${me.role === "ADMIN" ? "Administrator" : me.role}`;
     show("app");
+    S.isAdmin = me.isAdmin === true;
+    $("adminNav").hidden = !S.isAdmin;
     subscribeStatic();
+    if (S.isAdmin) initAdmin({ db, auth, cfg, S, esc, fmtDT, renderSoon, tileLayer });
     subscribeRange();
     route();
   });
@@ -192,11 +202,13 @@ const VIEWS = {
   overview: ["Overview", renderOverview], live: ["Live fleet", renderLive], trips: ["Trips", renderTrips],
   passengers: ["Passengers", renderPassengers], drivers: ["Drivers", renderDrivers],
   approvals: ["Approvals", renderApprovals], alerts: ["Alerts", renderAlerts],
+  ...ADMIN_VIEWS,
 };
 let current = "overview";
 function route() {
   current = (location.hash || "#overview").slice(1);
-  if (!VIEWS[current]) current = "overview";
+  if (!VIEWS[current] || (ADMIN_VIEWS[current] && !S.isAdmin)) current = "overview";
+  document.querySelector(".range").hidden = !!ADMIN_VIEWS[current];
   Object.keys(VIEWS).forEach((v) => { $(`view-${v}`).hidden = v !== current; });
   document.querySelectorAll("#nav a, #tabbar a").forEach((a) => a.classList.toggle("active", a.dataset.view === current));
   setNav(false);
@@ -241,11 +253,13 @@ let raf = 0;
 function renderSoon() { cancelAnimationFrame(raf); raf = requestAnimationFrame(render); }
 function render() {
   if (!S.me) return;
-  $("viewTitle").textContent = ["live", "approvals", "alerts"].includes(current) ? "Now" : S.range.label;
+  $("viewTitle").textContent = ADMIN_VIEWS[current] ? "Administration" : ["live", "approvals", "alerts"].includes(current) ? "Now" : S.range.label;
+  const waiting = S.isAdmin ? S.users.filter((u) => u.role === "PENDING" && u.active !== false).length : 0;
+  $("usersBadge").hidden = !waiting; $("usersBadge").textContent = waiting;
   const pend = S.pending.length, al = S.alerts.filter((a) => !a.acknowledged).length;
   $("pendingBadge").hidden = !pend; $("pendingBadge").textContent = pend;
   $("alertBadge").hidden = !al; $("alertBadge").textContent = al;
-  $("moreBadge").hidden = !(pend || al);
+  $("moreBadge").hidden = !(pend || al || waiting);
   VIEWS[current][1]();
   labelTables($(`view-${current}`));
 }

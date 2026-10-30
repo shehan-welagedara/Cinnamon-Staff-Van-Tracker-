@@ -54,7 +54,7 @@ jobs:
           '
 
       - name: Cache-bust dashboard files
-        run: sed -i -E "s/(config\.js|app\.js|styles\.css)\"/\1?v=${GITHUB_RUN_NUMBER}\"/g" web/index.html && grep -o 'v=[0-9]*' web/index.html | head -3
+        run: sed -i -E "s/(config\.js|app\.js|styles\.css)\"/\1?v=${GITHUB_RUN_NUMBER}\"/g" web/index.html && sed -i -E "s|\./admin\.js\"|./admin.js?v=${GITHUB_RUN_NUMBER}\"|" web/app.js && grep -o 'v=[0-9]*' web/index.html web/app.js | head -4
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
