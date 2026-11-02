@@ -27,6 +27,8 @@ object Repo {
     private val db get() = Backend.db
 
     val users get() = db.collection("users")
+    /** "Send me a test push" requests, answered by the server function. */
+    val pushTests get() = db.collection("pushTests")
     val requests get() = db.collection("requests")
     val trips get() = db.collection("trips")
     val schedules get() = db.collection("schedules")

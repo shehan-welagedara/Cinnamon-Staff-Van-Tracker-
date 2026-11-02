@@ -88,6 +88,8 @@ object Backend {
                 .setApiKey(cfg.apiKey)
                 .setApplicationId(cfg.appId)
                 .setProjectId(cfg.projectId)
+                // The project number is the 2nd part of the app id (1:<number>:android:…); push needs it.
+                .setGcmSenderId(cfg.appId.split(":").getOrNull(1).orEmpty())
                 .build()
             FirebaseApp.initializeApp(ctx.applicationContext, options)
         }

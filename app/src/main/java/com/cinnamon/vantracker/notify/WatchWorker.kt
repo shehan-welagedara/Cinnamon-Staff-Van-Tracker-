@@ -59,18 +59,18 @@ class WatchWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx,
             if (me.isManager || me.isAdmin) {
                 val pending = Repo.requests.whereEqualTo("status", RequestStatus.PENDING.name).get().await()
                     .documents.map(TripRequest::from).filter { it.createdAt > last }
-                if (pending.isNotEmpty()) {
-                    Notifier.show(
-                        ctx, 2001, Notifier.CH_REQUESTS,
-                        if (pending.size == 1) "New trip request" else "${pending.size} new trip requests",
-                        pending.joinToString("\n") { "${it.requesterName} (${it.department}): ${it.category} – ${it.purpose}" },
+                pending.filter { it.requesterUid != uid }.forEach {
+                    Notifier.showOnce(
+                        ctx, "req-new:${it.id}", Notifier.CH_REQUESTS,
+                        if (it.isDelivery) "New pickup / delivery request" else "New trip request – approval needed",
+                        "${it.requesterName} (${it.department}): ${it.category} – ${it.purpose}",
                         open = "approvals",
                     )
                 }
                 val newAlerts = Repo.alerts.whereGreaterThan("createdAt", last).get().await()
                     .documents.map(AlertItem::from).filter { !it.acknowledged }
                 newAlerts.forEach {
-                    Notifier.show(ctx, it.id.hashCode(), Notifier.CH_ALERTS, it.title, it.message, open = "alerts")
+                    Notifier.showOnce(ctx, "alert:${it.id}", Notifier.CH_ALERTS, it.title, it.message, open = "alerts")
                 }
             }
 
@@ -79,18 +79,18 @@ class WatchWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx,
                 val open = Repo.trips.whereIn("status", listOf(TripStatus.READY.name, TripStatus.ASSIGNED.name)).get().await()
                     .documents.map(Trip::from)
                 open.filter { it.status == TripStatus.READY && it.driverUid.isBlank() && it.openedAt > last }.forEach {
-                    Notifier.show(ctx, it.id.hashCode(), Notifier.CH_ALERTS, "New trip request – tap to accept",
+                    Notifier.showOnce(ctx, "trip-open:${it.id}:${it.openedAt}", Notifier.CH_ALERTS, "New trip – tap to accept",
                         "${it.title} · ${TripCalc.dateTime(it.plannedTime)}")
                 }
                 open.filter { it.status == TripStatus.ASSIGNED && it.driverUid == uid && (it.assignedAt ?: 0) > last }.forEach {
-                    Notifier.show(ctx, it.id.hashCode(), Notifier.CH_ALERTS, "Trip assigned to you",
+                    Notifier.showOnce(ctx, "trip-asg:${it.id}:$uid", Notifier.CH_ALERTS, "Trip assigned to you",
                         "${it.title} · ${TripCalc.dateTime(it.plannedTime)}")
                 }
             }
 
             val mine = Repo.requests.whereEqualTo("requesterUid", uid).get().await().documents.map(TripRequest::from)
             mine.filter { (it.acceptedAt ?: 0) > last && it.driverName.isNotBlank() }.forEach {
-                Notifier.show(ctx, it.id.hashCode() + 1, Notifier.CH_REQUESTS, "Driver confirmed",
+                Notifier.showOnce(ctx, "req-drv:${it.id}", Notifier.CH_REQUESTS, "Driver confirmed",
                     "${it.driverName} will take your ${it.category} trip (${TripCalc.dateTime(it.requestedTime)}).", open = "requests")
             }
             val decided = mine.filter { (it.decidedAt ?: 0) > last }
@@ -100,8 +100,8 @@ class WatchWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx,
                     RequestStatus.REJECTED -> "rejected"
                     else -> return@forEach
                 }
-                Notifier.show(
-                    ctx, it.id.hashCode(), Notifier.CH_REQUESTS, "Trip request $verb",
+                Notifier.showOnce(
+                    ctx, "req-dec:${it.id}", Notifier.CH_REQUESTS, "Trip request $verb",
                     "${it.category}: ${it.purpose}" + (if (it.decisionComment.isNotBlank()) "\n“${it.decisionComment}” – ${it.approverName}" else ""),
                     open = "requests",
                 )

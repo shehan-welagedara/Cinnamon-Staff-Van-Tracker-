@@ -49,4 +49,6 @@ object DevicePrefs {
 
     fun getLong(ctx: Context, key: String) = p(ctx).getLong(key, 0L)
     fun putLong(ctx: Context, key: String, v: Long) { p(ctx).edit().putLong(key, v).apply() }
+    fun getBool(ctx: Context, key: String) = p(ctx).getBoolean(key, false)
+    fun putBool(ctx: Context, key: String, v: Boolean) { p(ctx).edit().putBoolean(key, v).apply() }
 }

@@ -118,6 +118,7 @@ fun StaffHome(s: Session) {
     ) { pad ->
         // Content scrolls beneath the glass bars, so they blur it.
         LazyColumn(Modifier.fillMaxSize(), contentPadding = pad) {
+            item { NotificationsOffBanner(s) }
             item { AnnouncementBanner() }
             item { UpdateBanner() }
             if (!online) item { Banner("Offline – showing saved data. Changes sync when back online.", WarnOrange) }
@@ -826,6 +827,7 @@ private fun MoreBody(s: Session) {
             ListRow("📲", "Share setup code with other phones", last = true) { s.nav.go(Screen.ShareSetup) }
         }
     }
+    GroupCard { ListRow("🔔", "Notifications", last = true) { s.nav.go(Screen.Notifications) } }
     SectionHeader("Appearance")
     Column(Modifier.padding(horizontal = 16.dp, vertical = 6.dp)) { AppearancePicker() }
     AboutCard()

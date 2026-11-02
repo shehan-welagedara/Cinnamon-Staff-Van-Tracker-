@@ -1,0 +1,11 @@
+{
+  "name": "van-tracker-functions",
+  "description": "Instant push notifications for Van Tracker",
+  "private": true,
+  "main": "index.js",
+  "engines": { "node": "22" },
+  "dependencies": {
+    "firebase-admin": "13.10.0",
+    "firebase-functions": "6.6.0"
+  }
+}

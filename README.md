@@ -128,7 +128,7 @@ One-time set-up:
 
 ## Firestore rules
 
-When an update adds data, it may need new rules. Whenever `firestore.rules` changes in this repo, copy it again into **Firebase console → Firestore Database → Rules → Publish**. Version 1.0.6+ needs this for driver duty logs; 1.0.7+ for vehicles and the live fleet map; 1.0.8+ for booking seats on scheduled runs; the dashboard's audit log and email report status need the rules from 30 Oct 2026 (`audit`, `reportRuns`).
+When an update adds data, it may need new rules. Whenever `firestore.rules` changes in this repo, copy it again into **Firebase console → Firestore Database → Rules → Publish**. Version 1.0.6+ needs this for driver duty logs; 1.0.7+ for vehicles and the live fleet map; 1.0.8+ for booking seats on scheduled runs; the dashboard's audit log and email report status need the rules from 30 Oct 2026 (`audit`, `reportRuns`); instant push needs the rules from 2 Nov 2026 (`pushTests`).
 
 ## Updating the app (keeps all data)
 
@@ -140,6 +140,40 @@ When an update adds data, it may need new rules. Whenever `firestore.rules` chan
 - Every build is signed with the same key (`app/dev-signing.jks`). Don't uninstall the app before updating, and don't change the key, or phones will refuse the update.
 - Trips, requests, users and settings live in Firestore, not on the phone, so updates never touch them.
 - The Firebase connection and the Light/Dark choice are included in Android's own backup. On a reinstall with the same Google account, the phone reconnects without the setup code. Adding the `FIREBASE_*` secrets below removes the setup step entirely.
+
+## Instant push notifications
+
+Without this, phones check for news every 15 minutes or more, and Android often delays that further. With it, a notification arrives within seconds, even when the app is closed. This uses Firebase Cloud Messaging and the small server functions in `functions/`.
+
+**What sends a notification:**
+- A new request goes to the GM, OM and administrators.
+- When a request is approved or rejected, and when a driver is confirmed, the requester is told.
+- A trip opening to drivers goes to every driver. A trip assigned to someone goes to that driver.
+- When a ride starts, the people who booked it are told. When a trip is cancelled, its driver is told.
+- New alerts go to the GM, OM and administrators. New sign-ups go to administrators.
+
+**Setup (once, about 10 minutes):**
+1. **Blaze plan.** Firebase console → ⚙ **Usage and billing** → **Details & settings** → **Modify plan** → **Blaze (pay as you go)**.
+   - Cloud Functions need it, but this usage stays inside the free monthly allowance (2 million function calls). Expect US$0, or a few cents for storing the function code.
+   - Add a budget alert: Google Cloud console → **Billing** → **Budgets & alerts** → **Create budget**, e.g. US$1.
+2. **Deploy key.** Google Cloud console → **IAM & Admin → Service accounts** (select the Van Tracker project) → **Create service account**.
+   - Name it `github-deploy`, with the role **Owner**.
+   - Open it → **Keys** → **Add key** → **JSON**. A file downloads.
+3. GitHub repo → **Settings → Secrets and variables → Actions → New repository secret**. Name it `FIREBASE_SERVICE_ACCOUNT` and paste the whole content of the JSON file.
+4. GitHub → **Actions → Deploy push notifications → Run workflow**.
+   - The first deploy takes 5–10 minutes while Google switches on the services it needs.
+   - If it fails saying an API "has not been used" or "is disabled", wait 2 minutes and run it again.
+5. Republish `firestore.rules`. This version adds `pushTests`.
+6. On every phone, update to the latest app and open it once. Allow notifications when asked.
+   - In the dashboard, **Users & access** shows 🔔 Push next to everyone whose phone is registered.
+   - In the app, **More → Notifications → Test instant push** checks it end to end.
+
+The key is only needed to deploy. After a successful deploy you may delete it (Service accounts → Keys) and the GitHub secret, and create a new one only when the functions change.
+
+**If someone still gets nothing:** in the app, open **More → Notifications**.
+- It shows whether notifications are allowed, whether battery saving restricts the app, and whether instant push is registered.
+- **Test this phone** checks the phone itself.
+- Samsung, Xiaomi and Huawei phones also need the app allowed to run in the background. The screen lists where that setting is on each brand.
 
 ## Vehicle calendar, long trips and pickups
 

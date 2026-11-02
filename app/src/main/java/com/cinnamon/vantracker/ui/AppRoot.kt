@@ -80,6 +80,7 @@ sealed interface Screen {
     data class TripDetail(val id: String) : Screen
     data class NewRequest(val joinTarget: String = "", val joinLabel: String = "", val presetTime: Long = 0, val kind: String = "") : Screen
     data object Calendar : Screen
+    data object Notifications : Screen
     data object ActiveTrip : Screen
     data object Reasons : Screen
     data object FuelEntry : Screen
@@ -157,6 +158,7 @@ fun AppRoot(openRequest: String, onOpenHandled: () -> Unit) {
                 else -> {
                     val nav = remember(p.uid) { Nav() }
                     val session = Session(p, settings, nav)
+                    NotificationBootstrap(p.uid)
                     LaunchedEffect(p.uid, p.role, p.onDuty) {
                         WatchWorker.schedule(ctx)
                         DevicePrefs.setDriverPhone(ctx, p.isDriver)
@@ -202,6 +204,7 @@ private fun ScreenHost(s: Session) {
         is Screen.TripDetail -> TripDetailScreen(s, screen.id)
         is Screen.NewRequest -> NewRequestScreen(s, screen.joinTarget, screen.joinLabel, screen.presetTime, screen.kind)
         Screen.Calendar -> CalendarScreen(s)
+        Screen.Notifications -> NotificationsScreen(s)
         Screen.ActiveTrip -> ActiveTripScreen(s)
         Screen.Reasons -> ReasonsScreen(s)
         Screen.FuelEntry -> FuelEntryScreen(s)
@@ -417,5 +420,9 @@ fun signOut(ctx: android.content.Context) {
     TrackingService.stop(ctx)
     DevicePrefs.setDriverPhone(ctx, false)
     WatchWorker.cancel(ctx)
-    Backend.auth.signOut()
+    val app = ctx.applicationContext
+    AppScope.launch {
+        com.cinnamon.vantracker.notify.Push.unregister(app)
+        Backend.auth.signOut()
+    }
 }

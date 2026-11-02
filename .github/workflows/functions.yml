@@ -1,0 +1,52 @@
+name: Deploy push notifications
+
+# Deploys functions/ (instant push notifications) to the hotel's Firebase project.
+# Needs the repository secret FIREBASE_SERVICE_ACCOUNT (service-account JSON key) and the
+# Firebase project on the Blaze plan – see README "Instant push notifications".
+on:
+  push:
+    branches: [main]
+    paths: ["functions/**", "firebase.json", ".github/workflows/functions.yml"]
+  workflow_dispatch:
+
+concurrency:
+  group: functions
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the deploy key
+        id: key
+        env:
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "$SA" ]; then
+            echo "::notice::FIREBASE_SERVICE_ACCOUNT secret not set – push notifications not deployed (see README)."
+            echo "ok=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          printf '%s' "$SA" > "$RUNNER_TEMP/sa.json"
+          echo "project=$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1])).project_id)' "$RUNNER_TEMP/sa.json")" >> "$GITHUB_OUTPUT"
+          echo "ok=true" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v4
+        if: steps.key.outputs.ok == 'true'
+        with:
+          node-version: 22
+
+      - name: Install
+        if: steps.key.outputs.ok == 'true'
+        run: npm ci --prefix functions --no-audit --no-fund
+
+      - name: Deploy
+        if: steps.key.outputs.ok == 'true'
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
+        run: npx --yes firebase-tools@14.27.0 deploy --only functions --project "${{ steps.key.outputs.project }}" --non-interactive --force
+
+      - name: Remove the key file
+        if: always()
+        run: rm -f "$RUNNER_TEMP/sa.json"

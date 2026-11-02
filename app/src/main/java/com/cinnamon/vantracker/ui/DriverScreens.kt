@@ -248,6 +248,7 @@ fun DriverHome(s: Session) {
         }
     }) { pad ->
         LazyColumn(Modifier.fillMaxSize(), contentPadding = pad) {
+            item { NotificationsOffBanner(s) }
             item { AnnouncementBanner() }
             item { UpdateBanner() }
             message?.let { (text, err) -> item { Banner(text, if (err) DangerRed else OkGreen) { message = null } } }
@@ -369,6 +370,7 @@ fun DriverHome(s: Session) {
                     ListRow("📅", "Vehicle calendar") { s.nav.go(Screen.Calendar) }
                     ListRow("🗂", "Trip history") { s.nav.go(Screen.Trips) }
                     ListRow("📱", "Driver phone setup") { s.nav.go(Screen.DriverSetup) }
+                    ListRow("🔔", "Notifications") { s.nav.go(Screen.Notifications) }
                     ListRow("🚪", "Sign out", last = true, tint = DangerRed) { menu = true }
                 }
                 SectionHeader("Appearance")

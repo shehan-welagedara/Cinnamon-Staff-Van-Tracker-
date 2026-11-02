@@ -170,7 +170,7 @@ function renderUsers() {
     (rows.length ? `<table><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Department</th><th>Role</th><th>Status</th><th></th></tr></thead><tbody>${rows.map((u) => `<tr>
       <td><b>${e(u.name)}</b>${isMe(u) ? ' <span class="muted small">(you)</span>' : ""}</td><td>${e(u.email)}</td><td>${e(u.phone)}</td><td>${e(u.department)}</td>
       <td>${e(ROLE_LABEL[u.role] || u.role)}${u.isAdmin && u.role !== "ADMIN" ? ' <span class="chip c-brand">Admin</span>' : ""}</td>
-      <td>${userStatus(u)[1]}${u.onDuty ? ' <span class="chip c-info">On duty</span>' : ""}</td>
+      <td>${userStatus(u)[1]}${u.onDuty ? ' <span class="chip c-info">On duty</span>' : ""}${(u.fcmTokens || []).length ? ' <span class="chip c-brand" title="Phone registered for instant notifications">🔔 Push</span>' : ""}</td>
       <td class="actions"><button class="btn ghost sm" data-uedit="${e(u.id)}">Edit</button><button class="btn ghost sm" data-ureset="${e(u.id)}">Reset password</button>
       ${isMe(u) ? "" : u.active === false ? `<button class="btn ok sm" data-uactive="${e(u.id)}">Activate</button>` : `<button class="btn danger sm" data-uinactive="${e(u.id)}">Deactivate</button>`}</td></tr>`).join("")}</tbody></table>`
       : `<p class="empty">No users match.</p>`);

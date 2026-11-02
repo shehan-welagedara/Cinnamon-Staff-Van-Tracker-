@@ -121,6 +121,11 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // "Test instant push" requests – the server function answers and deletes them.
+    match /pushTests/{id} {
+      allow create: if active() && request.resource.data.uid == request.auth.uid;
+    }
+
     match /fuelLogs/{id} {
       allow read: if active();
       allow create: if isDriver() || isAdmin();
