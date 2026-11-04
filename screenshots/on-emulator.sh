@@ -2,6 +2,12 @@
 # Runs inside the Android emulator job: clean status bar, install, run the tour, pull the PNGs.
 set -x
 PKG=com.cinnamon.vantracker
+# Slow CI emulators show "… isn't responding" pop-ups; hide them and let the system settle.
+adb shell settings put global hide_error_dialogs 1 || true
+adb shell settings put secure anr_show_background 0 || true
+sleep 45
+adb shell input keyevent KEYCODE_HOME
+sleep 10
 adb shell settings put global sysui_demo_allowed 1
 adb shell am broadcast -a com.android.systemui.demo -e command enter
 adb shell am broadcast -a com.android.systemui.demo -e command clock -e hhmm 0941
@@ -12,7 +18,7 @@ adb shell cmd overlay enable com.android.internal.systemui.navbar.gestural || tr
 adb shell cmd alarm set-timezone Asia/Colombo || adb shell setprop persist.sys.timezone Asia/Colombo || true
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
-for p in POST_NOTIFICATIONS ACCESS_FINE_LOCATION ACCESS_COARSE_LOCATION; do adb shell pm grant $PKG android.permission.$p || true; done
+for p in POST_NOTIFICATIONS ACCESS_FINE_LOCATION ACCESS_COARSE_LOCATION ACCESS_BACKGROUND_LOCATION; do adb shell pm grant $PKG android.permission.$p || true; done
 adb shell am instrument -w -e class $PKG.ScreenshotTour $PKG.test/androidx.test.runner.AndroidJUnitRunner | tee instrument.log
 mkdir -p out
 adb exec-out run-as $PKG tar -C files -cf - shots > out/shots.tar || true

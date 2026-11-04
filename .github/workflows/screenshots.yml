@@ -75,8 +75,8 @@ jobs:
       - name: Save a few screenshots in the repo (demo data only)
         if: always()
         run: |
-          mkdir -p docs/screenshots
-          for f in 01-login 02-hod-home 04-request-form 06-calendar-colombo 08-delivery-request 15-approvals 19-live-map 22-driver-open-trip 24-notification 12-hod-home-dark; do
+          rm -rf docs/screenshots && mkdir -p docs/screenshots
+          for f in 01-login 02-hod-home 04-request-form 05-calendar 06-calendar-colombo 08-delivery-request 09-my-requests 15-approvals 16-approve-dialog 19-live-map 22-driver-open-trip 23-driver-accepted 24-notification; do
             [ -f "out/shots/$f.png" ] && cp "out/shots/$f.png" docs/screenshots/
           done
           cp out/shots/log.txt docs/screenshots/tour-log.txt 2>/dev/null || true

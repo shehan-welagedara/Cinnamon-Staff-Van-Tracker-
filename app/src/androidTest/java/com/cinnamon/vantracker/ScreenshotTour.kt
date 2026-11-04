@@ -11,6 +11,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.uiautomator.By
 import androidx.test.uiautomator.UiDevice
 import com.cinnamon.vantracker.data.Backend
 import com.cinnamon.vantracker.data.FbConfig
@@ -43,8 +44,18 @@ class ScreenshotTour {
 
     private fun note(s: String) { log.appendText(s + "\n"); android.util.Log.i("ScreenshotTour", s) }
 
+    /** Closes Android's "… isn't responding" pop-up if a slow emulator shows one. */
+    private fun dismissSystemDialogs() {
+        repeat(3) {
+            val anr = device.findObject(By.textContains("isn't responding")) ?: return
+            (device.findObject(By.text("Wait")) ?: device.findObject(By.text("Close app")))?.click()
+            Thread.sleep(800)
+            if (anr.let { device.findObject(By.textContains("isn't responding")) } == null) return
+        }
+    }
+
     private fun shot(name: String, settle: Long = 1800) {
-        rule.waitForIdle(); Thread.sleep(settle); rule.waitForIdle()
+        rule.waitForIdle(); Thread.sleep(settle); dismissSystemDialogs(); rule.waitForIdle()
         device.takeScreenshot(File(dir, "$name.png"))
         note("shot $name")
     }
@@ -54,6 +65,7 @@ class ScreenshotTour {
 
     /** Taps the first clickable node showing [text] (falls back to any node with it). */
     private fun tap(text: String, substring: Boolean = false) {
+        dismissSystemDialogs()
         waitFor(text, substring)
         val clickable = rule.onAllNodes(hasText(text, substring) and hasClickAction())
         if (clickable.fetchSemanticsNodes().isNotEmpty()) clickable[0].performClick()
