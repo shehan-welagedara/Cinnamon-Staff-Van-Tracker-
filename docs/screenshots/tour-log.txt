@@ -18,7 +18,7 @@ shot 16-approve-dialog
 shot 17-alerts
 shot 18-more
 shot 19-live-map
-FAILED reports: ComposeTimeoutException: Condition still not satisfied after 15000 ms
+shot 20-reports
 shot 21-driver-home
 shot 22-driver-open-trip
 shot 23-driver-accepted
