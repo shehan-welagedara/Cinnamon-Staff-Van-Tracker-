@@ -9,6 +9,9 @@ on:
     branches: [main]
     paths: ["screenshots/**", "app/src/androidTest/**", ".github/workflows/screenshots.yml"]
 
+permissions:
+  contents: write
+
 jobs:
   shots:
     runs-on: ubuntu-latest
@@ -68,3 +71,17 @@ jobs:
             out/
             instrument.log
             emulators.log
+
+      - name: Save a few screenshots in the repo (demo data only)
+        if: always()
+        run: |
+          mkdir -p docs/screenshots
+          for f in 01-login 02-hod-home 04-request-form 06-calendar-colombo 08-delivery-request 15-approvals 19-live-map 22-driver-open-trip 24-notification 12-hod-home-dark; do
+            [ -f "out/shots/$f.png" ] && cp "out/shots/$f.png" docs/screenshots/
+          done
+          cp out/shots/log.txt docs/screenshots/tour-log.txt 2>/dev/null || true
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/screenshots
+          git commit -m "App screenshots (demo data) from run ${{ github.run_number }}" || exit 0
+          git pull --rebase -q origin main && git push -q origin HEAD:main
