@@ -1,0 +1,26 @@
+status bar px: 136
+shot 01-login
+shot 02-hod-home
+shot 03-hod-home-runs
+FAILED request: ComposeTimeoutException: Condition still not satisfied after 15000 ms
+shot 05-calendar
+shot 06-calendar-colombo
+FAILED join: ComposeTimeoutException: Condition still not satisfied after 15000 ms
+FAILED delivery: ComposeTimeoutException: Condition still not satisfied after 15000 ms
+shot 09-my-requests
+FAILED trips: ComposeTimeoutException: Condition still not satisfied after 15000 ms
+FAILED trip-detail: ComposeTimeoutException: Condition still not satisfied after 15000 ms
+shot 12-hod-home-dark
+shot 13-calendar-dark
+shot 14-gm-home
+shot 15-approvals
+shot 16-approve-dialog
+shot 17-alerts
+shot 18-more
+shot 19-live-map
+FAILED reports: ComposeTimeoutException: Condition still not satisfied after 15000 ms
+shot 21-driver-home
+shot 22-driver-open-trip
+shot 23-driver-accepted
+shot 24-notification
+done
