@@ -6,7 +6,8 @@ plugins {
 
 fun env(name: String): String = System.getenv(name) ?: ""
 
-val runNumber = env("GITHUB_RUN_NUMBER").toIntOrNull() ?: 1
+// VERSION_CODE_OVERRIDE is only used by the screenshot workflow (so no "update available" banner).
+val runNumber = env("VERSION_CODE_OVERRIDE").toIntOrNull() ?: env("GITHUB_RUN_NUMBER").toIntOrNull() ?: 1
 
 android {
     namespace = "com.cinnamon.vantracker"
@@ -18,6 +19,7 @@ android {
         targetSdk = 35
         versionCode = runNumber
         versionName = "1.0.$runNumber"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         // Optional: bake Firebase config into the APK (set as GitHub secrets).
         // When empty, the app asks for the config on first launch.
@@ -106,4 +108,13 @@ dependencies {
 
     // Frosted "liquid glass" blur behind bars and cards (Apache 2.0)
     implementation("dev.chrisbanes.haze:haze:1.2.2")
+
+    // Screenshot tour (screenshots/ workflow) – instrumented UI test, not part of the APK.
+    androidTestImplementation(composeBom)
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test:rules:1.6.1")
+    androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }

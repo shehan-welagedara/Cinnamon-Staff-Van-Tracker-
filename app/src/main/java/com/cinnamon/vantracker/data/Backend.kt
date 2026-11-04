@@ -57,6 +57,10 @@ object Backend {
     var initialized = false
         private set
 
+    /** Local Firebase emulator host – set only by the screenshot test (debug builds). */
+    @Volatile
+    var emulatorHost: String? = null
+
     fun storedConfig(ctx: Context): FbConfig? {
         val built = FbConfig(BuildConfig.FB_API_KEY, BuildConfig.FB_APP_ID, BuildConfig.FB_PROJECT_ID)
         if (built.valid) return built
@@ -92,6 +96,10 @@ object Backend {
                 .setGcmSenderId(cfg.appId.split(":").getOrNull(1).orEmpty())
                 .build()
             FirebaseApp.initializeApp(ctx.applicationContext, options)
+        }
+        emulatorHost?.let { h ->
+            FirebaseFirestore.getInstance().useEmulator(h, 8080)
+            FirebaseAuth.getInstance().useEmulator(h, 9099)
         }
         // Offline-first: every read is served from the on-device cache when there is no
         // signal, and writes are queued and synced automatically once back online.

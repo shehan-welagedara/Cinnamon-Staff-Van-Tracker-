@@ -4,9 +4,9 @@ on:
   push:
     branches: [main]
     # Only app changes produce a new APK release (no "update available" for web/docs edits).
-    paths-ignore: ["web/**", "reports/**", "**/*.md", "firestore.rules", ".github/workflows/web.yml", "functions/**", "firebase.json", ".github/workflows/functions.yml"]
+    paths-ignore: ["web/**", "reports/**", "**/*.md", "firestore.rules", ".github/workflows/web.yml", "functions/**", "firebase.json", ".github/workflows/functions.yml", "screenshots/**", "app/src/androidTest/**", ".github/workflows/screenshots.yml"]
   pull_request:
-    paths-ignore: ["web/**", "reports/**", "**/*.md", "firestore.rules", ".github/workflows/web.yml", "functions/**", "firebase.json", ".github/workflows/functions.yml"]
+    paths-ignore: ["web/**", "reports/**", "**/*.md", "firestore.rules", ".github/workflows/web.yml", "functions/**", "firebase.json", ".github/workflows/functions.yml", "screenshots/**", "app/src/androidTest/**", ".github/workflows/screenshots.yml"]
   workflow_dispatch:
 
 permissions:

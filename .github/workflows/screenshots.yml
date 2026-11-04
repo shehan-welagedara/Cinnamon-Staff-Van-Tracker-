@@ -1,0 +1,70 @@
+name: App screenshots
+
+# Boots an Android emulator and a LOCAL Firebase emulator with demo data
+# (screenshots/seed.js), runs the ScreenshotTour UI test and uploads the PNGs.
+# Never touches the hotel's real Firebase project.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["screenshots/**", "app/src/androidTest/**", ".github/workflows/screenshots.yml"]
+
+jobs:
+  shots:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build app and tour
+        env:
+          VERSION_CODE_OVERRIDE: "9999"
+        run: ./gradlew --no-daemon assembleDebug assembleDebugAndroidTest
+
+      - name: Start Firebase emulators with demo data
+        run: |
+          npm ci --prefix functions --no-audit --no-fund
+          nohup npx --yes firebase-tools@14.27.0 emulators:start --only auth,firestore --project demo-vantracker > emulators.log 2>&1 &
+          for i in $(seq 1 90); do
+            curl -s -o /dev/null http://127.0.0.1:8080 && curl -s -o /dev/null http://127.0.0.1:9099 && break
+            sleep 2
+          done
+          export FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099
+          TZ=Asia/Colombo NODE_PATH=functions/node_modules node screenshots/seed.js
+
+      - name: Run the screenshot tour
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_7
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -timezone Asia/Colombo
+          script: bash screenshots/on-emulator.sh
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: app-screenshots
+          path: |
+            out/
+            instrument.log
+            emulators.log
