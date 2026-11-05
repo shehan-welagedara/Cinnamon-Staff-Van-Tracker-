@@ -63,6 +63,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.cinnamon.vantracker.data.DEPARTMENTS
 import com.cinnamon.vantracker.data.FuelLog
 import com.cinnamon.vantracker.data.Repo
 import com.cinnamon.vantracker.data.Schedule
@@ -192,6 +193,9 @@ private fun PermissionRow(label: String, ok: Boolean, enabled: Boolean = true, o
  * Driver mode, Uber-style: go on duty → new requests alert every on-duty driver → the first
  * to accept gets the trip → "Start ride" when passengers are on board → "Finish ride".
  */
+/** Marker for the vehicle picker: start an urgent trip without a request. */
+private const val URGENT = "urgent"
+
 @Composable
 fun DriverHome(s: Session) {
     val ctx = LocalContext.current
@@ -307,6 +311,20 @@ fun DriverHome(s: Session) {
                 }
             }
 
+            // ---- urgent trip without a request (special situations)
+            if (!recording) item {
+                SectionCard(accent = WarnOrange) {
+                    Text("Urgent trip without a request", fontWeight = FontWeight.Bold)
+                    Text(
+                        "For an urgent need when there is no time to request. After the ride you give the reason " +
+                            "and the passengers' department; their HOD or executive confirms it.",
+                        color = TextSecondary, fontSize = 13.sp,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    OutlinedButton(enabled = canStart, onClick = { pickFor = URGENT }) { Text("Start urgent trip") }
+                }
+            }
+
             // ---- my accepted trips
             item { SectionHeader("My trips") }
             if (myTrips.isEmpty()) item { Empty("No trips accepted yet.") }
@@ -385,8 +403,9 @@ fun DriverHome(s: Session) {
     pickFor?.let { target ->
         val t = target as? Trip
         val sc = target as? Schedule
+        val urgent = target == URGENT
         VehiclePickerDialog(
-            title = if (t != null) "Start ride" else "Start ${sc?.title}",
+            title = if (t != null) "Start ride" else if (urgent) "Start urgent trip" else "Start ${sc?.title}",
             vehicles = vehicles,
             busy = busy,
             preselect = t?.vehicleId?.ifBlank { null } ?: DevicePrefs.lastVehicleId(ctx),
@@ -401,6 +420,9 @@ fun DriverHome(s: Session) {
             } else if (sc != null) {
                 val id = Repo.startScheduled(sc, me, now, v)
                 TrackingService.startTrip(ctx, id, sc.title, emptyList(), v)
+            } else if (urgent) {
+                val id = Repo.startUrgentTrip(me, now, v)
+                TrackingService.startTrip(ctx, id, "Urgent trip", emptyList(), v)
             }
             pickFor = null
             s.nav.go(Screen.ActiveTrip)
@@ -437,6 +459,7 @@ fun DriverHome(s: Session) {
 fun TripCard(t: Trip, s: Session, onClick: (() -> Unit)? = null, actions: @Composable () -> Unit = {}) {
     val color = when {
         t.type == TripType.UNAUTHORIZED -> DangerRed
+        t.type == TripType.URGENT && t.status != TripStatus.IN_PROGRESS -> WarnOrange
         t.status == TripStatus.IN_PROGRESS -> OkGreen
         t.status == TripStatus.READY -> WarnOrange
         t.status == TripStatus.ASSIGNED -> InfoBlue
@@ -462,6 +485,7 @@ fun TripCard(t: Trip, s: Session, onClick: (() -> Unit)? = null, actions: @Compo
             InfoRow("Fuel / cost", "${TripCalc.liters(t.fuelLiters)} · ${TripCalc.money(t.fuelCost, s.settings.currency)}")
         }
         if (t.requestIds.size > 1) Text("Combined trip: ${t.requestIds.size} requests", color = InfoBlue, fontSize = 13.sp)
+        JustifyLine(t)
         Spacer(Modifier.height(4.dp))
         actions()
     }
@@ -597,26 +621,40 @@ fun ReasonsScreen(s: Session) {
         LazyColumn(Modifier.padding(pad)) {
             item {
                 Text(
-                    "The van moved without an approved trip. Enter a reason for each before ${s.settings.reasonDeadlineHour}:00, otherwise management is alerted automatically.",
+                    "Trips without an approved request (urgent trips, or movement detected by a vehicle phone). Enter the reason and the " +
+                        "passengers' department before ${s.settings.reasonDeadlineHour}:00, otherwise management is alerted automatically.",
                     modifier = Modifier.padding(16.dp),
                 )
             }
             if (list.isEmpty()) item { Empty("Nothing pending 👍") }
             items(list, key = { it.id }) { t ->
                 var text by remember(t.id) { mutableStateOf("") }
-                SectionCard(TripCalc.dateTime(t.startTime ?: t.createdAt), accent = DangerRed, onClick = { s.nav.go(Screen.TripDetail(t.id)) }) {
+                var dept by remember(t.id) { mutableStateOf("") }
+                var pax by remember(t.id) { mutableStateOf("") }
+                var chosen by remember(t.id) { mutableStateOf(t.type != TripType.URGENT) }
+                val urgent = t.type == TripType.URGENT
+                SectionCard(
+                    (if (urgent) "Urgent trip · " else "") + TripCalc.dateTime(t.startTime ?: t.createdAt),
+                    accent = if (urgent) WarnOrange else DangerRed, onClick = { s.nav.go(Screen.TripDetail(t.id)) },
+                ) {
                     InfoRow("Status", if (t.status == TripStatus.IN_PROGRESS) "Still recording" else "Ended ${t.endTime?.let { TripCalc.time(it) } ?: ""}")
                     InfoRow("Distance", TripCalc.km(t.distanceKm))
                     InfoRow("Driver", t.driverName)
                     if (s.me.isDriver || s.me.isAdmin) {
-                        OutlinedTextField(text, { text = it }, label = { Text("Reason") }, modifier = Modifier.fillMaxWidth())
-                        Button(enabled = text.isNotBlank(), onClick = { Repo.submitReason(t.id, text.trim()) }) { Text("Submit") }
+                        OutlinedTextField(text, { text = it }, label = { Text("Reason – where and why") }, modifier = Modifier.fillMaxWidth())
+                        Picker("Passengers' department", dept.ifBlank { if (chosen) NO_PASSENGERS else "Choose…" },
+                            listOf(NO_PASSENGERS) + DEPARTMENTS) { dept = if (it == NO_PASSENGERS) "" else it; chosen = true }
+                        if (dept.isNotBlank()) OutlinedTextField(pax, { pax = it }, label = { Text("Passenger name(s)") }, modifier = Modifier.fillMaxWidth())
+                        if (dept.isNotBlank()) Text("The $dept HOD / executive will be asked to confirm this trip.", color = TextSecondary, fontSize = 13.sp)
+                        Button(enabled = text.isNotBlank() && chosen, onClick = { Repo.submitReason(t.id, text.trim(), dept, pax.trim()) }) { Text("Submit") }
                     }
                 }
             }
         }
     }
 }
+
+private const val NO_PASSENGERS = "No passengers (vehicle only)"
 
 // ------------------------------------------------------------------ fuel entry
 
@@ -660,5 +698,17 @@ fun navigateTo(ctx: Context, lat: Double, lng: Double) {
     val nav = Intent(Intent.ACTION_VIEW, Uri.parse("google.navigation:q=$lat,$lng&mode=d")).setPackage("com.google.android.apps.maps")
     runCatching { ctx.startActivity(nav) }.onFailure {
         runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("geo:$lat,$lng?q=$lat,$lng"))) }
+    }
+}
+
+/** Where an urgent / unapproved trip stands with the passengers' department. */
+@Composable
+fun JustifyLine(t: Trip) {
+    when (t.justifyStatus) {
+        "PENDING" -> Text("Waiting for ${t.justifyDepartment} HOD / executive to confirm", color = WarnOrange, fontSize = 13.sp)
+        "JUSTIFIED" -> Text("✓ Confirmed by ${t.justifiedBy}" + (if (t.justifyComment.isNotBlank()) ": “${t.justifyComment}”" else ""), color = OkGreen, fontSize = 13.sp)
+        "DISPUTED" -> Text("✗ Disputed by ${t.justifiedBy}" + (if (t.justifyComment.isNotBlank()) ": “${t.justifyComment}”" else ""), color = DangerRed, fontSize = 13.sp)
+        else -> if (t.type == TripType.URGENT && t.needsReason && t.status == TripStatus.COMPLETED)
+            Text("Driver still has to give the reason", color = WarnOrange, fontSize = 13.sp)
     }
 }

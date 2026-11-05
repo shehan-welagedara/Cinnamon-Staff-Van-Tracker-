@@ -454,6 +454,51 @@ object Repo {
         return ref.id
     }
 
+    /**
+     * A driver starts an urgent trip that nobody requested. After the ride the driver gives the
+     * reason and the passengers' department; that department's HODs/executives then confirm it.
+     */
+    fun startUrgentTrip(driver: UserProfile, startTime: Long, vehicle: Vehicle): String {
+        val ref = trips.document("urgent_" + trips.document().id)
+        ref.set(
+            mapOf(
+                "type" to TripType.URGENT.name, "status" to TripStatus.IN_PROGRESS.name,
+                "title" to "Urgent trip", "category" to "Urgent", "purpose" to "",
+                "departments" to emptyList<String>(), "requestIds" to emptyList<String>(), "stops" to emptyList<Any>(),
+                "plannedTime" to startTime, "startTime" to startTime, "openedAt" to startTime,
+                "driverUid" to driver.uid, "driverName" to driver.name, "needsReason" to true, "reason" to "",
+                "vehicleId" to vehicle.id, "vehicleName" to vehicle.label,
+                "createdAt" to now(), "createdBy" to driver.name,
+            )
+        )
+        return ref.id
+    }
+
+    fun justifyFlow() = queryFlow(trips.whereEqualTo("justifyStatus", "PENDING"))
+        .map { s -> s?.documents?.map(Trip::from).orEmpty().sortedByDescending { it.startTime ?: it.createdAt } }
+
+    /** The department confirms (or disputes) an urgent / unapproved trip its staff used. */
+    fun justifyTrip(t: Trip, by: UserProfile, ok: Boolean, comment: String) {
+        val batch = db.batch()
+        batch.update(
+            trips.document(t.id), mapOf(
+                "justifyStatus" to if (ok) "JUSTIFIED" else "DISPUTED", "justifiedBy" to by.name, "justifiedByUid" to by.uid,
+                "justifiedAt" to now(), "justifyComment" to comment,
+                "reviewStatus" to if (ok) "ACCEPTED" else "FLAGGED", "reviewedBy" to by.name,
+            )
+        )
+        if (!ok) batch.set(
+            alerts.document("disputed_${t.id}"), mapOf(
+                "type" to "TRIP_DISPUTED", "severity" to "HIGH",
+                "title" to "Urgent trip disputed by ${by.department}",
+                "message" to "${by.name} says the trip by ${t.driverName} (${TripCalc.dateTime(t.startTime ?: t.createdAt)}, " +
+                    "reason: “${t.reason}”) was not for ${t.justifyDepartment}." + (if (comment.isNotBlank()) " Comment: “$comment”" else ""),
+                "tripId" to t.id, "createdAt" to now(), "acknowledged" to false,
+            )
+        )
+        batch.commit()
+    }
+
     fun markStopArrived(trip: Trip, index: Int) {
         val updated = trip.stops.mapIndexed { i, s -> if (i == index) s.copy(arrivedAt = now()) else s }
         trips.document(trip.id).update("stops", updated.map { it.toMap() })
@@ -479,9 +524,18 @@ object Repo {
         live.document(vehicleId.ifBlank { Vehicle.DEFAULT_ID }).set(fields, SetOptions.merge())
     }
 
-    fun submitReason(tripId: String, reason: String) {
+    /**
+     * The driver's reason for a trip without a request. With a [department] the trip goes to that
+     * department's HODs/executives to confirm; blank = no passengers (management reviews it).
+     */
+    fun submitReason(tripId: String, reason: String, department: String = "", passengerNames: String = "") {
         val batch = db.batch()
-        batch.update(trips.document(tripId), mapOf("reason" to reason, "reasonAt" to now(), "needsReason" to false, "purpose" to reason))
+        val fields = mutableMapOf<String, Any?>("reason" to reason, "reasonAt" to now(), "needsReason" to false, "purpose" to reason)
+        if (department.isNotBlank()) fields += mapOf(
+            "departments" to listOf(department), "justifyStatus" to "PENDING", "justifyDepartment" to department,
+            "passengerNames" to passengerNames,
+        )
+        batch.update(trips.document(tripId), fields)
         batch.set(alerts.document("missing_$tripId"), mapOf("acknowledged" to true, "acknowledgedBy" to "Reason submitted"), SetOptions.merge())
         batch.commit()
     }

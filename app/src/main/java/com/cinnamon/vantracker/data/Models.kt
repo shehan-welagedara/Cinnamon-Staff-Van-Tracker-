@@ -11,6 +11,8 @@ enum class Role(val label: String) {
     PENDING("Pending approval"),
     DRIVER("Driver"),
     HOD("Head of Department"),
+    /** Department executive: raises requests for their staff, like an HOD. */
+    EXECUTIVE("Executive"),
     GM("General Manager"),
     OM("Operations Manager"),
     ADMIN("Administrator");
@@ -54,6 +56,8 @@ data class UserProfile(
     /** GM, OM and Administrators can approve trips. */
     val isManager get() = role == Role.GM || role == Role.OM || role == Role.ADMIN
     val isDriver get() = role == Role.DRIVER
+    /** HODs and executives confirm urgent trips for their department. */
+    val isDeptLead get() = role == Role.HOD || role == Role.EXECUTIVE
     val isApproved get() = role != Role.PENDING && active
 
     fun toMap() = mapOf(
@@ -160,6 +164,12 @@ data class TripRequest(
     val deliveryContact: String = "",
     /** Long trips (e.g. Colombo): when the vehicle is expected back – blocks the calendar until then. */
     val awayUntil: Long? = null,
+    /** Urgent trips: "" (not needed), PENDING (department must confirm), JUSTIFIED or DISPUTED. */
+    val justifyStatus: String = "",
+    val justifyDepartment: String = "",
+    val justifiedBy: String = "",
+    val justifyComment: String = "",
+    val passengerNames: String = "",
 ) {
     val isDelivery get() = kind == KIND_DELIVERY
     val travellers get() = passengerNames.ifBlank { requesterName }
@@ -206,7 +216,9 @@ data class TripRequest(
 }
 
 enum class TripType(val label: String) {
-    REQUEST("Approved request"), SCHEDULED("Scheduled (pre-approved)"), UNAUTHORIZED("Unauthorized movement");
+    REQUEST("Approved request"), SCHEDULED("Scheduled (pre-approved)"), UNAUTHORIZED("Unauthorized movement"),
+    /** Started by a driver for an urgent need without a request; justified afterwards by the department. */
+    URGENT("Urgent (started by driver)");
 
     companion object {
         fun of(s: String?) = entries.firstOrNull { it.name == s } ?: REQUEST
@@ -296,6 +308,11 @@ data class Trip(
             vehicleName = d.str("vehicleName"),
             destination = Stop.from(d.get("destination")),
             awayUntil = d.getLong("awayUntil"),
+            justifyStatus = d.str("justifyStatus"),
+            justifyDepartment = normDept(d.str("justifyDepartment")),
+            justifiedBy = d.str("justifiedBy"),
+            justifyComment = d.str("justifyComment"),
+            passengerNames = d.str("passengerNames"),
             startTime = d.getLong("startTime"),
             endTime = d.getLong("endTime"),
             distanceKm = d.dbl("distanceKm"),
@@ -430,7 +447,7 @@ data class AppSettings(
     val reasonDeadlineHour: Int = 22,
     val autoEndUnauthorizedMin: Int = 5,
     /** Seats on pre-approved scheduled runs are confirmed instantly (no GM/OM approval). */
-    val autoApproveScheduled: Boolean = true,
+    val autoApproveScheduled: Boolean = false,
     /** Phones on an older app version must update before they can continue (0 = off). */
     val minVersionCode: Int = 0,
 ) {
@@ -446,7 +463,7 @@ data class AppSettings(
         "movementSpeedKmh" to movementSpeedKmh, "minGpsAccuracyM" to minGpsAccuracyM,
         "usePowerTrigger" to usePowerTrigger,
         "reasonDeadlineHour" to reasonDeadlineHour, "autoEndUnauthorizedMin" to autoEndUnauthorizedMin,
-        "autoApproveScheduled" to autoApproveScheduled, "minVersionCode" to minVersionCode,
+        "instantSeatConfirm" to autoApproveScheduled, "minVersionCode" to minVersionCode,
     )
 
     companion object {
@@ -470,7 +487,8 @@ data class AppSettings(
                 usePowerTrigger = d.getBoolean("usePowerTrigger") ?: true,
                 reasonDeadlineHour = d.getLong("reasonDeadlineHour")?.toInt() ?: def.reasonDeadlineHour,
                 autoEndUnauthorizedMin = d.getLong("autoEndUnauthorizedMin")?.toInt() ?: def.autoEndUnauthorizedMin,
-                autoApproveScheduled = d.getBoolean("autoApproveScheduled") ?: true,
+                // Seats on scheduled runs need GM/OM approval unless the admin turns this on.
+                autoApproveScheduled = d.getBoolean("instantSeatConfirm") ?: false,
                 minVersionCode = d.getLong("minVersionCode")?.toInt() ?: 0,
             )
         }

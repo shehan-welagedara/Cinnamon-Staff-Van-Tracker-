@@ -128,7 +128,7 @@
           <select id="fVehicle"><option value="">All vehicles</option></select>
           <select id="fDriver"><option value="">All drivers</option></select>
           <select id="fDept"><option value="">All departments</option></select>
-          <select id="fType"><option value="">All types</option><option value="REQUEST">Requests</option><option value="SCHEDULED">Scheduled runs</option><option value="UNAUTHORIZED">Unapproved</option></select>
+          <select id="fType"><option value="">All types</option><option value="REQUEST">Requests</option><option value="SCHEDULED">Scheduled runs</option><option value="UNAUTHORIZED">Unapproved</option><option value="URGENT">Urgent (driver-started)</option></select>
           <select id="fStatus"><option value="">All statuses</option><option>COMPLETED</option><option>IN_PROGRESS</option><option>ASSIGNED</option><option>READY</option><option>CANCELLED</option></select>
           <button id="tripsCsv" class="btn ghost">⬇ CSV</button>
         </div>
@@ -166,7 +166,7 @@
       <div id="view-users" class="view" hidden>
         <div class="glass card filters">
           <input id="uSearch" placeholder="Search name, email, phone, department…">
-          <select id="uRole"><option value="">All roles</option><option value="DRIVER">Drivers</option><option value="HOD">Heads of Department</option><option value="GM">General Manager</option><option value="OM">Operations Manager</option><option value="ADMIN">Administrator role</option><option value="ADMINFLAG">Anyone with admin rights</option></select>
+          <select id="uRole"><option value="">All roles</option><option value="DRIVER">Drivers</option><option value="HOD">Heads of Department</option><option value="EXECUTIVE">Executives</option><option value="GM">General Manager</option><option value="OM">Operations Manager</option><option value="ADMIN">Administrator role</option><option value="ADMINFLAG">Anyone with admin rights</option></select>
           <select id="uStatus"><option value="">Any status</option><option value="pending">Waiting for approval</option><option value="active">Active</option><option value="inactive">Deactivated</option></select>
           <button id="uAdd" class="btn ok">＋ Add user</button>
           <button id="uCsv" class="btn ghost">⬇ CSV</button>
@@ -227,7 +227,7 @@
           </div>
           <div class="glass card"><h3>🧭 Requests & tracking</h3>
             <form id="setTrackingForm" class="admin-form">
-              <label class="check-row"><input type="checkbox" name="autoApproveScheduled"> <span>Confirm seats on scheduled runs instantly (no GM/OM approval)</span></label>
+              <label class="check-row"><input type="checkbox" name="instantSeatConfirm"> <span>Confirm seats on scheduled runs instantly (skip GM/OM approval – normally off)</span></label>
               <div class="grid-2f">
                 <label>Reason deadline (hour 0–23)<input name="reasonDeadlineHour" type="number" min="0" max="23"></label>
                 <label>Auto-end unapproved recording after (min)<input name="autoEndUnauthorizedMin" type="number" min="1" max="120"></label>

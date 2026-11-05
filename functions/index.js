@@ -10,6 +10,8 @@
 //   trip started / cancelled  → requesters / the driver
 //   new alert                 → GM / OM / administrators
 //   new sign-up               → administrators
+//   urgent trip started       → GM / OM / administrators
+//   urgent trip reason given  → the passengers' department HODs / executives (to confirm)
 //   "Test instant push"       → the person who asked
 //
 // Phones store their push tokens in users/{uid}.fcmTokens. Messages carry a "key" that the
@@ -27,6 +29,7 @@ const db = getFirestore();
 
 const MANAGER_ROLES = ["GM", "OM", "ADMIN"];
 const isManager = (u) => MANAGER_ROLES.includes(u.role) || u.isAdmin === true;
+const normDept = (d) => (d === "Management" ? "Administration" : d || "");
 const fmtTime = (ms) => (ms ? new Date(ms).toLocaleString("en-GB", {
   timeZone: "Asia/Colombo", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit",
 }) : "");
@@ -154,6 +157,25 @@ exports.onTripWrite = onDocumentWritten("trips/{id}", async (event) => {
         body: `${after.driverName || "The driver"} started ${after.title || "the trip"}${after.vehicleName ? " · " + after.vehicleName : ""}.`,
       }, after.driverUid);
     }
+  }
+
+  // Urgent trip started by a driver without a request: tell management straight away.
+  if (!before && after.type === "URGENT") {
+    await notify((await load()).filter(isManager), {
+      key: `urgent-start:${id}`, channel: "alerts", open: "",
+      title: "Urgent trip started without a request",
+      body: `${after.driverName || "A driver"} started an urgent trip${after.vehicleName ? " in " + after.vehicleName : ""} at ${fmtTime(after.startTime)}.`,
+    });
+  }
+
+  // Driver gave the reason and department: that department's HODs / executives confirm it.
+  if (after.justifyStatus === "PENDING" && before?.justifyStatus !== "PENDING") {
+    const dept = after.justifyDepartment || "";
+    await notify((await load()).filter((u) => ["HOD", "EXECUTIVE"].includes(u.role) && normDept(u.department) === normDept(dept)), {
+      key: `justify:${id}`, channel: "requests", open: "justify",
+      title: "Urgent trip – please confirm",
+      body: `${after.driverName} took ${after.passengerNames || "staff"} (${dept}) on ${fmtTime(after.startTime)}: “${after.reason}”`,
+    });
   }
 
   // Cancelled after a driver took it.

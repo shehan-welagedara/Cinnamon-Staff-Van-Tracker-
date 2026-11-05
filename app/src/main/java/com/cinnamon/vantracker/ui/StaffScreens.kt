@@ -119,6 +119,7 @@ fun StaffHome(s: Session) {
         // Content scrolls beneath the glass bars, so they blur it.
         LazyColumn(Modifier.fillMaxSize(), contentPadding = pad) {
             item { NotificationsOffBanner(s) }
+            item { JustifyBanner(s) }
             item { AnnouncementBanner() }
             item { UpdateBanner() }
             if (!online) item { Banner("Offline – showing saved data. Changes sync when back online.", WarnOrange) }
@@ -204,7 +205,7 @@ private fun UpcomingTrips(s: Session) {
     val dayKey = Repo.dateKey()
     val runs = schedules.filter { it.active && TripCalc.isoDay(System.currentTimeMillis()) in it.days }.sortedBy { it.time }
 
-    SectionHeader("Today's scheduled runs – book a seat")
+    SectionHeader("Today's scheduled runs – add your ride")
     if (runs.isEmpty()) Empty("No scheduled runs today.")
     runs.forEach { sc ->
         val tripId = Repo.scheduleTripId(sc.id, dayKey)
@@ -233,11 +234,13 @@ private fun UpcomingTrips(s: Session) {
                 if (trip.driverName.isNotBlank()) InfoRow("Driver", trip.driverName)
             }
             if (myBooking != null) {
-                Text("✓ Your seat is booked" + (myBooking.stops.firstOrNull()?.name?.let { " – drop-off: $it" } ?: ""),
-                    color = OkGreen, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                val waiting = myBooking.status == RequestStatus.PENDING
+                Text((if (waiting) "⏳ Your ride is waiting for approval" else "✓ Your ride is confirmed") +
+                    (myBooking.stops.firstOrNull()?.name?.let { " – drop-off: $it" } ?: ""),
+                    color = if (waiting) WarnOrange else OkGreen, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
             } else if (!departed) {
                 Spacer(Modifier.height(6.dp))
-                Button(onClick = { s.nav.go(Screen.NewRequest(target, "${sc.title} (${sc.time})")) }) { Text("Book my seat") }
+                Button(onClick = { s.nav.go(Screen.NewRequest(target, "${sc.title} (${sc.time})")) }) { Text("+ Add my ride to this run") }
             }
         }
     }
@@ -465,9 +468,10 @@ private fun BookSeatScreen(s: Session, sc: Schedule, day: String) {
     var passengerNames by remember { mutableStateOf(s.me.name) }
     var seats by remember { mutableStateOf("1") }
     var notes by remember { mutableStateOf("") }
+    var purpose by remember { mutableStateOf("") }
     var saving by remember { mutableStateOf(false) }
     val instant = s.settings.autoApproveScheduled
-    Scaffold(topBar = { AppBar("Book a seat", onBack = { s.nav.back() }) }) { pad ->
+    Scaffold(topBar = { AppBar("Add my ride to this run", onBack = { s.nav.back() }) }) { pad ->
         Column(Modifier.padding(pad).verticalScroll(rememberScrollState())) {
             SectionCard(sc.title, accent = Cinnamon) {
                 InfoRow("Departs", "${sc.time}, ${if (day == Repo.dateKey()) "today" else day}")
@@ -479,6 +483,7 @@ private fun BookSeatScreen(s: Session, sc: Schedule, day: String) {
                 )
             }
             Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(purpose, { purpose = it }, label = { Text("Purpose of the ride (e.g. going to Kandy town)") }, modifier = Modifier.fillMaxWidth())
                 SectionHeader("Where should the driver drop you?")
                 StopsEditor(stops, s, label = { "Drop-off point (search or tap the map)" }, allowAdd = false)
                 if (sc.destination != null) TextButton(onClick = { stops[0] = sc.destination.copy(requestId = "", arrivedAt = null) }) {
@@ -489,13 +494,13 @@ private fun BookSeatScreen(s: Session, sc: Schedule, day: String) {
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(notes, { notes = it }, label = { Text("Note for the driver (optional)") }, modifier = Modifier.fillMaxWidth())
                 Button(
-                    enabled = !saving && stops.first().name.isNotBlank() && passengerNames.isNotBlank(),
+                    enabled = !saving && stops.first().name.isNotBlank() && passengerNames.isNotBlank() && (instant || purpose.isNotBlank()),
                     modifier = Modifier.fillMaxWidth().height(50.dp),
                     onClick = {
                         saving = true
                         val r = TripRequest(
                             requesterUid = s.me.uid, requesterName = s.me.name, department = s.me.department,
-                            category = sc.category.ifBlank { "Staff Transport" }, purpose = sc.purpose.ifBlank { sc.title },
+                            category = sc.category.ifBlank { "Staff Transport" }, purpose = purpose.trim().ifBlank { sc.purpose.ifBlank { sc.title } },
                             stops = stops.filter { it.name.isNotBlank() }, requestedTime = Repo.plannedTimeFor(sc, day),
                             passengers = seats.toIntOrNull()?.coerceAtLeast(1) ?: 1, notes = notes.trim(),
                             joinTarget = Repo.scheduleTarget(sc, day), joinTargetLabel = "${sc.title} (${sc.time})",
@@ -506,8 +511,9 @@ private fun BookSeatScreen(s: Session, sc: Schedule, day: String) {
                     },
                 ) { Text(if (instant) "Confirm my seat" else "Send for approval") }
                 Text(
-                    if (instant) "Scheduled runs are pre-approved – your seat is confirmed straight away and the driver sees your drop-off."
-                    else "Your GM / Operations Manager will confirm the seat.",
+                    if (instant) "Seats on scheduled runs are confirmed straight away and the driver sees your drop-off."
+                    else "The run itself needs no approval, but joining it with your own drop-off does: your GM / Operations Manager " +
+                        "approves it, then the driver sees your drop-off. Staff ride requests go through their HOD or executive.",
                     color = TextSecondary, fontSize = 13.sp,
                 )
                 Spacer(Modifier.height(24.dp))

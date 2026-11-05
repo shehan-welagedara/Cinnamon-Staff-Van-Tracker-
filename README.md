@@ -175,6 +175,20 @@ The key is only needed to deploy. After a successful deploy you may delete it (S
 - **Test this phone** checks the phone itself.
 - Samsung, Xiaomi and Huawei phones also need the app allowed to run in the background. The screen lists where that setting is on each brand.
 
+## Scheduled runs, ride requests and urgent trips
+
+- **Scheduled runs** (for example the daily Bank run and the staff transport to the accommodation) need no approval. The driver simply starts them.
+- **Joining a run** with your own drop-off or for another purpose (for example "going to Kandy town on the bank run") is a request:
+  - HODs and **executives** raise it for themselves or their staff, from the home screen (**+ Add my ride to this run**) or the calendar.
+  - It needs a purpose, and the GM / OM approves it like any other request. Approving adds the ride to that day's run, in the app or on the dashboard.
+  - Administrators can switch this back to instant confirmation in Settings, but it's normally off.
+- **Executive** is a user role that works like an HOD.
+- **Urgent trips without a request:**
+  1. The driver taps **Start urgent trip** and drives as normal. Management is notified that an urgent trip has started.
+  2. When the ride ends, the driver gets a notification to enter the reason, the passengers' department and their names.
+  3. That department's HODs and executives are notified and confirm it (**Confirm – justified**) or reject it (**Not ours**, which raises an alert to management).
+  4. Confirmed trips appear in the trip log and reports like any other trip. The dashboard's Trips page has an "Urgent (driver-started)" filter.
+
 ## Vehicle calendar, long trips and pickups
 
 - **Calendar** tab (staff and managers; drivers: More → Vehicle calendar): a month view of the vehicles. Blue dot = booked trip, orange day = vehicle away on a long trip (6 h or more, e.g. Colombo), purple dot = regular scheduled run.

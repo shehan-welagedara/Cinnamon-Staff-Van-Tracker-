@@ -495,6 +495,13 @@ class TrackingService : LifecycleService() {
             "endedBy" to if (manual) "Driver" else "Auto (vehicle parked)",
         )
         Repo.completeTrip(state.tripId, summary, state.requestIds)
+        if (state.tripId.startsWith("urgent_")) {
+            Notifier.show(
+                this, NOTIF_UNAUTH, Notifier.CH_ALERTS, "Urgent trip finished – reason needed",
+                "Tap to enter the reason and the passengers' department. Their HOD confirms it.",
+                open = "reasons",
+            )
+        }
         // Leave the vehicle on the map where it was parked.
         writeLive(force = true, modeOverride = "PARKED")
         // The vehicle is now parked here; guard relative to this point (or the hotel if inside it).

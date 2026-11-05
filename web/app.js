@@ -7,7 +7,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
 import {
   getFirestore, collection, doc, getDoc, getDocs, onSnapshot, query, where, orderBy, limit,
-  updateDoc, writeBatch,
+  updateDoc, writeBatch, arrayUnion, increment,
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { ADMIN_VIEWS, initAdmin } from "./admin.js";
 
@@ -208,6 +208,7 @@ let current = "overview";
 function route() {
   current = (location.hash || "#overview").slice(1);
   if (!VIEWS[current] || (ADMIN_VIEWS[current] && !S.isAdmin)) current = "overview";
+  if ($("tripDialog").open) $("tripDialog").close();
   document.querySelector(".range").hidden = !!ADMIN_VIEWS[current];
   Object.keys(VIEWS).forEach((v) => { $(`view-${v}`).hidden = v !== current; });
   document.querySelectorAll("#nav a, #tabbar a").forEach((a) => a.classList.toggle("active", a.dataset.view === current));
@@ -344,13 +345,23 @@ function filteredTrips() {
     .sort((a, b) => tripTime(b) - tripTime(a));
 }
 
+const TYPE_LABEL = { REQUEST: "Approved request", SCHEDULED: "Scheduled run", UNAUTHORIZED: "Unapproved movement", URGENT: "Urgent (started by driver)" };
+/** Urgent / unapproved trips: where the passengers' department confirmation stands. */
+function justifyChip(t) {
+  if (t.justifyStatus === "PENDING") return ` <span class="chip c-warn">Awaiting ${esc(normDept(t.justifyDepartment))}</span>`;
+  if (t.justifyStatus === "JUSTIFIED") return ` <span class="chip c-ok">Confirmed</span>`;
+  if (t.justifyStatus === "DISPUTED") return ` <span class="chip c-danger">Disputed</span>`;
+  if (t.type === "URGENT" && t.needsReason && t.status === "COMPLETED") return ` <span class="chip c-warn">Reason missing</span>`;
+  return "";
+}
+
 function tripTable(rows) {
   if (!rows.length) return `<p class="empty">No trips in this period.</p>`;
   return `<table><thead><tr><th>When</th><th>Trip</th><th>Driver</th><th>Vehicle</th><th>Departments</th><th class="num">Pax</th><th class="num">Distance</th><th class="num">Time</th><th class="num">Fuel cost</th><th>Status</th></tr></thead><tbody>${
     rows.map((t) => `<tr class="click" data-trip="${esc(t.id)}"><td>${esc(fmtDT(tripTime(t)))}</td><td><b>${esc(t.title)}</b>${t.destination?.name ? `<br><span class="muted small">→ ${esc(t.destination.name)}</span>` : ""}</td>
       <td>${esc(t.driverName || "—")}</td><td>${esc(vehicleName(t))}</td><td>${esc((t.departments || []).map(normDept).join(", "))}</td>
       <td class="num">${t.passengers || 0}</td><td class="num">${km(t.distanceKm)}</td><td class="num">${dur(t.durationMin)}</td><td class="num">${money(t.fuelCost)}</td>
-      <td>${t.type === "UNAUTHORIZED" ? chip("x", t.reason ? "Unapproved" : "Unapproved – no reason").replace("c-muted", "c-danger") : chip(t.status)}</td></tr>`).join("")
+      <td>${t.type === "UNAUTHORIZED" ? chip("x", t.reason ? "Unapproved" : "Unapproved – no reason").replace("c-muted", "c-danger") : chip(t.status)}${justifyChip(t)}</td></tr>`).join("")
   }</tbody></table>`;
 }
 
@@ -383,13 +394,15 @@ async function openTrip(id) {
   }).join("");
   $("tdBody").innerHTML = `
     <div class="kv">
-      <div><span>Status</span>${chip(t.status)}</div><div><span>Type</span>${esc(t.type)}</div>
+      <div><span>Status</span>${chip(t.status)}</div><div><span>Type</span>${esc(TYPE_LABEL[t.type] || t.type)}</div>
       <div><span>Driver</span>${esc(t.driverName || "—")}</div><div><span>Vehicle</span>${esc(vehicleName(t))}</div>
       <div><span>Started</span>${esc(fmtDT(t.startTime) || "—")}</div><div><span>Ended</span>${esc(fmtDT(t.endTime) || "—")}</div>
       <div><span>Distance</span>${km(t.distanceKm)}</div><div><span>Time on road</span>${dur(t.durationMin)} (moving ${dur(t.movingMin)})</div>
       <div><span>Fuel</span>${nf2.format(t.fuelLiters || 0)} L · ${money(t.fuelCost)}</div><div><span>Max speed</span>${Math.round(t.maxSpeedKmh || 0)} km/h</div>
       ${t.destination?.name ? `<div><span>Destination</span>${esc(t.destination.name)}</div>` : ""}
-      ${t.type === "UNAUTHORIZED" ? `<div><span>Reason</span>${esc(t.reason || "NOT GIVEN")}</div>` : ""}
+      ${t.type === "UNAUTHORIZED" || t.type === "URGENT" ? `<div><span>Reason</span>${esc(t.reason || "NOT GIVEN")}</div>` : ""}
+      ${t.justifyStatus ? `<div><span>Department check</span>${esc(normDept(t.justifyDepartment))}: ${esc(t.justifyStatus === "PENDING" ? "waiting" : t.justifyStatus.toLowerCase() + " by " + (t.justifiedBy || ""))}${t.justifyComment ? ` – “${esc(t.justifyComment)}”` : ""}</div>` : ""}
+      ${t.passengerNames ? `<div><span>Passenger(s)</span>${esc(t.passengerNames)}</div>` : ""}
     </div>
     ${stopRows ? `<h3>Stops & drop-offs</h3><div class="table-wrap"><table><thead><tr><th>#</th><th>Stop</th><th>Passenger</th><th>Department</th><th>Arrived</th></tr></thead><tbody>${stopRows}</tbody></table></div>` : ""}
     ${reqs.length ? `<h3 style="margin-top:14px">Passengers</h3><div class="table-wrap"><table><thead><tr><th>Passenger(s)</th><th>Requested by</th><th>Department</th><th class="num">Seats</th><th>Status</th></tr></thead><tbody>${
@@ -549,7 +562,7 @@ function renderApprovals() {
       ${r.joinTargetLabel ? `<p class="muted">Wants to join: ${esc(r.joinTargetLabel)}</p>` : ""}
       ${r.notes ? `<p class="muted">Notes: ${esc(r.notes)}</p>` : ""}
       <div class="row" style="justify-content:flex-start;gap:8px"><button class="btn ok" data-approve="${esc(r.id)}">Approve</button><button class="btn danger" data-reject="${esc(r.id)}">Reject</button></div>
-      <p class="muted small">Approving here creates a separate trip for all drivers. To combine with another trip or pick a driver, use the app.</p>
+      <p class="muted small">${r.joinTarget ? "Approving adds this ride to that trip / run." : "Approving creates a separate trip for all drivers. To combine with another trip or pick a driver, use the app."}</p>
     </div>`).join("") || `<p class="empty">Nothing waiting for approval 👍</p>`;
   $("approvalList").querySelectorAll("[data-approve]").forEach((b) => { b.onclick = () => approve(S.pending.find((r) => r.id === b.dataset.approve)); });
   $("approvalList").querySelectorAll("[data-reject]").forEach((b) => { b.onclick = () => reject(S.pending.find((r) => r.id === b.dataset.reject)); });
@@ -560,18 +573,45 @@ async function approve(r) {
   const comment = prompt("Comment for the requester (optional):", "") ?? null;
   if (comment === null) return;
   const now = Date.now();
-  const tripRef = doc(collection(db, "trips"));
   const stops = (r.stops || []).map((s) => ({ ...s, requestId: r.id, department: r.department }));
+  const join = { requestIds: arrayUnion(r.id), departments: arrayUnion(r.department), stops: arrayUnion(...stops), passengers: increment(r.passengers || 1) };
   const b = writeBatch(db);
-  b.set(tripRef, {
-    type: "REQUEST", status: "READY", title: `${r.category} – ${r.department}`, category: r.category, purpose: r.purpose,
-    departments: [r.department], requestIds: [r.id], stops, plannedTime: r.requestedTime, passengers: r.passengers || 1,
-    createdAt: now, openedAt: now, createdBy: S.me.name, driverUid: "", driverName: "",
-  });
-  b.update(doc(db, "requests", r.id), {
-    status: "APPROVED", approverName: S.me.name, approverUid: S.me.uid, decidedAt: now, decisionComment: comment.trim(), tripId: tripRef.id,
-  });
-  await b.commit().catch((e) => alert(e.message));
+  let tripRef;
+  try {
+    if ((r.joinTarget || "").startsWith("trip:")) {
+      // Joins a planned trip (e.g. "I'm going too" from the calendar).
+      tripRef = doc(db, "trips", r.joinTarget.slice(5));
+      b.update(tripRef, join);
+    } else if ((r.joinTarget || "").startsWith("sched:")) {
+      // A ride on a scheduled run: add it to that day's run (created if the driver hasn't started it yet).
+      const [, sid, day] = r.joinTarget.split(":");
+      tripRef = doc(db, "trips", `sched_${sid}_${day}`);
+      const exists = (await getDoc(tripRef)).exists();
+      if (!exists) {
+        const sc = (await getDoc(doc(db, "schedules", sid))).data() || {};
+        const [hh, mm] = String(sc.time || "08:00").split(":").map(Number);
+        const planned = new Date(+day.slice(0, 4), +day.slice(4, 6) - 1, +day.slice(6, 8), hh || 0, mm || 0).getTime();
+        b.set(tripRef, {
+          type: "SCHEDULED", status: "READY", title: sc.title || r.joinTargetLabel || "Scheduled run", category: sc.category || "",
+          purpose: sc.purpose || "", scheduleId: sid, plannedTime: planned, createdAt: now, openedAt: now, createdBy: S.me.name,
+          destination: sc.destination || null, driverUid: "", driverName: "",
+          requestIds: [r.id], departments: [...new Set([sc.department, r.department].filter(Boolean))],
+          stops: [...(sc.stops || []), ...stops], passengers: r.passengers || 1,
+        });
+      } else b.update(tripRef, join);
+    } else {
+      tripRef = doc(collection(db, "trips"));
+      b.set(tripRef, {
+        type: "REQUEST", status: "READY", title: `${r.category} – ${r.department}`, category: r.category, purpose: r.purpose,
+        departments: [r.department], requestIds: [r.id], stops, plannedTime: r.requestedTime, passengers: r.passengers || 1,
+        awayUntil: r.awayUntil || null, createdAt: now, openedAt: now, createdBy: S.me.name, driverUid: "", driverName: "",
+      });
+    }
+    b.update(doc(db, "requests", r.id), {
+      status: "APPROVED", approverName: S.me.name, approverUid: S.me.uid, decidedAt: now, decisionComment: comment.trim(), tripId: tripRef.id,
+    });
+    await b.commit();
+  } catch (e) { alert(e.message); }
 }
 
 async function reject(r) {

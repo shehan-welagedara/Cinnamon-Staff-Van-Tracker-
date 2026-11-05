@@ -10,7 +10,7 @@ import {
   addDoc, setDoc, updateDoc, deleteDoc,
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
-const ROLES = [["DRIVER", "Driver"], ["HOD", "Head of Department"], ["GM", "General Manager"], ["OM", "Operations Manager"], ["ADMIN", "Administrator"]];
+const ROLES = [["DRIVER", "Driver"], ["HOD", "Head of Department"], ["EXECUTIVE", "Executive"], ["GM", "General Manager"], ["OM", "Operations Manager"], ["ADMIN", "Administrator"]];
 const ROLE_LABEL = Object.fromEntries([["PENDING", "Waiting for approval"], ...ROLES]);
 const DEPARTMENTS = ["Front Office", "Housekeeping", "F&B Service", "Kitchen", "Engineering", "Finance",
   "Human Resources", "Purchasing", "Sales & Marketing", "Security", "Administration", "Transport"];
@@ -430,7 +430,7 @@ function renderSettings() {
   fillForm("setFuelForm", { currency: st.currency || "LKR", fuelPricePerLiter: st.fuelPricePerLiter ?? "", petrolPricePerLiter: st.petrolPricePerLiter ?? "", kmPerLiter: st.kmPerLiter ?? "", distanceCorrectionPct: st.distanceCorrectionPct ?? 0 });
   fillForm("setHotelForm", { hotelName: st.hotelName || "", hotelLat: st.hotelLat ?? "", hotelLng: st.hotelLng ?? "", geofenceRadiusM: st.geofenceRadiusM ?? 150 });
   fillForm("setTrackingForm", {
-    autoApproveScheduled: st.autoApproveScheduled !== false, reasonDeadlineHour: st.reasonDeadlineHour ?? 20, autoEndUnauthorizedMin: st.autoEndUnauthorizedMin ?? 10,
+    instantSeatConfirm: st.instantSeatConfirm === true, reasonDeadlineHour: st.reasonDeadlineHour ?? 20, autoEndUnauthorizedMin: st.autoEndUnauthorizedMin ?? 10,
     movementSpeedKmh: st.movementSpeedKmh ?? 12, minGpsAccuracyM: st.minGpsAccuracyM ?? 50, usePowerTrigger: st.usePowerTrigger !== false,
   });
   const min = st.minVersionCode || 0;
@@ -444,7 +444,7 @@ function renderSettings() {
 const SETTING_FIELDS = {
   setFuel: { currency: "text", fuelPricePerLiter: "num", petrolPricePerLiter: "num", kmPerLiter: "num", distanceCorrectionPct: "num" },
   setHotel: { hotelName: "text", hotelLat: "num", hotelLng: "num", geofenceRadiusM: "num" },
-  setTracking: { autoApproveScheduled: "bool", reasonDeadlineHour: "int", autoEndUnauthorizedMin: "int", movementSpeedKmh: "num", minGpsAccuracyM: "num", usePowerTrigger: "bool" },
+  setTracking: { instantSeatConfirm: "bool", reasonDeadlineHour: "int", autoEndUnauthorizedMin: "int", movementSpeedKmh: "num", minGpsAccuracyM: "num", usePowerTrigger: "bool" },
 };
 
 async function saveSettings(id) {

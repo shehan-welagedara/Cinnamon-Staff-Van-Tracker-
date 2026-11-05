@@ -88,6 +88,16 @@ class WatchWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx,
                 }
             }
 
+            if (me.isDeptLead || me.isManager || me.isAdmin) {
+                val toConfirm = Repo.trips.whereEqualTo("justifyStatus", "PENDING").get().await().documents.map(Trip::from)
+                com.cinnamon.vantracker.ui.tripsToJustify(toConfirm, me).forEach {
+                    Notifier.showOnce(
+                        ctx, "justify:${it.id}", Notifier.CH_REQUESTS, "Urgent trip – please confirm",
+                        "${it.driverName} took ${it.passengerNames.ifBlank { "staff" }} (${it.justifyDepartment}): “${it.reason}”", open = "justify",
+                    )
+                }
+            }
+
             val mine = Repo.requests.whereEqualTo("requesterUid", uid).get().await().documents.map(TripRequest::from)
             mine.filter { (it.acceptedAt ?: 0) > last && it.driverName.isNotBlank() }.forEach {
                 Notifier.showOnce(ctx, "req-drv:${it.id}", Notifier.CH_REQUESTS, "Driver confirmed",

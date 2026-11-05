@@ -12,9 +12,11 @@ service cloud.firestore {
     function isAdmin() { return active() && me().isAdmin == true; }
     function isManager() { return active() && (me().role in ['GM', 'OM', 'ADMIN'] || me().isAdmin == true); }
     function isDriver() { return active() && me().role == 'DRIVER'; }
+    function isDeptLead() { return active() && me().role in ['HOD', 'EXECUTIVE']; }
     function changed() { return request.resource.data.diff(resource.data).affectedKeys(); }
     function autoApproveRuns() {
-      return get(/databases/$(database)/documents/config/settings).data.get('autoApproveScheduled', true) != false;
+      // Off unless the administrator turns it on: joining a scheduled run needs GM/OM approval.
+      return get(/databases/$(database)/documents/config/settings).data.get('instantSeatConfirm', false) == true;
     }
 
     // First account may claim the administrator role exactly once.
@@ -81,7 +83,12 @@ service cloud.firestore {
       allow update: if isManager() || isDriver()
         || (active() && resource.data.status in ['READY', 'ASSIGNED'] && changed().hasOnly(['requestIds', 'stops', 'passengers', 'status']))
         || (active() && id.matches('sched_.*') && resource.data.status in ['READY', 'ASSIGNED']
-            && changed().hasOnly(['requestIds', 'departments', 'stops', 'passengers']));
+            && changed().hasOnly(['requestIds', 'departments', 'stops', 'passengers']))
+        // The passengers' HOD / executive confirms or disputes an urgent trip.
+        || (isDeptLead() && resource.data.get('justifyStatus', '') == 'PENDING'
+            && resource.data.get('justifyDepartment', '') == me().department
+            && request.resource.data.justifyStatus in ['JUSTIFIED', 'DISPUTED']
+            && changed().hasOnly(['justifyStatus', 'justifiedBy', 'justifiedByUid', 'justifiedAt', 'justifyComment', 'reviewStatus', 'reviewedBy']));
       allow delete: if isAdmin();
 
       match /track/{chunk} {

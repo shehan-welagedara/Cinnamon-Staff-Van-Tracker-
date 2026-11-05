@@ -220,7 +220,7 @@ private fun DayAgenda(s: Session, day: Long, trips: List<Trip>, runs: List<Sched
             sc.destination?.let { InfoRow("Goes to", it.name) }
             if (at > now && !s.me.isDriver) {
                 Spacer(Modifier.height(6.dp))
-                Button(onClick = { s.nav.go(Screen.NewRequest(Repo.scheduleTarget(sc, key), "${sc.title} (${sc.time})")) }) { Text("Book my seat") }
+                Button(onClick = { s.nav.go(Screen.NewRequest(Repo.scheduleTarget(sc, key), "${sc.title} (${sc.time})")) }) { Text("+ Add my ride") }
             }
         }
     }

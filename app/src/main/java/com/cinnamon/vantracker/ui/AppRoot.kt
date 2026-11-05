@@ -81,6 +81,7 @@ sealed interface Screen {
     data class NewRequest(val joinTarget: String = "", val joinLabel: String = "", val presetTime: Long = 0, val kind: String = "") : Screen
     data object Calendar : Screen
     data object Notifications : Screen
+    data object Justify : Screen
     data object ActiveTrip : Screen
     data object Reasons : Screen
     data object FuelEntry : Screen
@@ -177,6 +178,7 @@ fun AppRoot(openRequest: String, onOpenHandled: () -> Unit) {
                                 "approvals" -> if (session.canApprove) nav.go(Screen.Approvals)
                                 "alerts" -> if (session.canApprove) nav.go(Screen.Alerts)
                                 "reasons" -> nav.go(Screen.Reasons)
+                                "justify" -> nav.go(Screen.Justify)
                                 "requests" -> nav.go(Screen.MyRequests)
                                 "update" -> UpdateCache.dialog = true
                             }
@@ -205,6 +207,7 @@ private fun ScreenHost(s: Session) {
         is Screen.NewRequest -> NewRequestScreen(s, screen.joinTarget, screen.joinLabel, screen.presetTime, screen.kind)
         Screen.Calendar -> CalendarScreen(s)
         Screen.Notifications -> NotificationsScreen(s)
+        Screen.Justify -> JustifyScreen(s)
         Screen.ActiveTrip -> ActiveTripScreen(s)
         Screen.Reasons -> ReasonsScreen(s)
         Screen.FuelEntry -> FuelEntryScreen(s)
@@ -361,7 +364,7 @@ fun RegisterScreen(existingUser: FirebaseUser?, onCancel: (() -> Unit)? = null) 
             OutlinedTextField(phone, { phone = it }, label = { Text("Mobile number") }, modifier = Modifier.fillMaxWidth(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone))
             Picker("Department", department, DEPARTMENTS) { department = it }
-            Picker("I am a", role.label, listOf(Role.HOD, Role.DRIVER, Role.GM, Role.OM, Role.ADMIN).map { it.label }) { l ->
+            Picker("I am a", role.label, listOf(Role.HOD, Role.EXECUTIVE, Role.DRIVER, Role.GM, Role.OM, Role.ADMIN).map { it.label }) { l ->
                 role = Role.entries.first { it.label == l }
                 if (role == Role.ADMIN) admin = true
             }
