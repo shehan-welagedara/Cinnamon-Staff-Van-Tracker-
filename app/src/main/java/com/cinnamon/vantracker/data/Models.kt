@@ -164,12 +164,6 @@ data class TripRequest(
     val deliveryContact: String = "",
     /** Long trips (e.g. Colombo): when the vehicle is expected back – blocks the calendar until then. */
     val awayUntil: Long? = null,
-    /** Urgent trips: "" (not needed), PENDING (department must confirm), JUSTIFIED or DISPUTED. */
-    val justifyStatus: String = "",
-    val justifyDepartment: String = "",
-    val justifiedBy: String = "",
-    val justifyComment: String = "",
-    val passengerNames: String = "",
 ) {
     val isDelivery get() = kind == KIND_DELIVERY
     val travellers get() = passengerNames.ifBlank { requesterName }
@@ -280,6 +274,12 @@ data class Trip(
     val destination: Stop? = null,
     /** Expected return of a long trip; the vehicle shows as away on the calendar until then. */
     val awayUntil: Long? = null,
+    /** Urgent trips: "" (not needed), PENDING (department must confirm), JUSTIFIED or DISPUTED. */
+    val justifyStatus: String = "",
+    val justifyDepartment: String = "",
+    val justifiedBy: String = "",
+    val justifyComment: String = "",
+    val passengerNames: String = "",
 ) {
     /** Last moment this trip occupies the vehicle (for the availability calendar). */
     val busyUntil get() = endTime ?: awayUntil ?: (plannedTime.takeIf { it > 0 } ?: startTime ?: createdAt) + 2 * 3600_000L
