@@ -41,11 +41,26 @@ jobs:
         if: steps.key.outputs.ok == 'true'
         run: npm ci --prefix functions --no-audit --no-fund
 
+      - name: Switch on the Google services the deploy needs
+        if: steps.key.outputs.ok == 'true'
+        run: |
+          # firebase-tools enables most APIs itself, but only checks the billing API.
+          gcloud auth activate-service-account --key-file="$RUNNER_TEMP/sa.json" --quiet
+          PROJECT="${{ steps.key.outputs.project }}"
+          if ! gcloud services list --enabled --project "$PROJECT" --format="value(config.name)" | grep -qx cloudbilling.googleapis.com; then
+            gcloud services enable cloudbilling.googleapis.com --project "$PROJECT"
+            echo "Enabled the Cloud Billing API – waiting for it to take effect"
+            sleep 90
+          fi
+
       - name: Deploy
         if: steps.key.outputs.ok == 'true'
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
-        run: npx --yes firebase-tools@14.27.0 deploy --only functions --project "${{ steps.key.outputs.project }}" --non-interactive --force
+        run: |
+          deploy() { npx --yes firebase-tools@14.27.0 deploy --only functions --project "${{ steps.key.outputs.project }}" --non-interactive --force; }
+          # A first deploy can fail while newly enabled services and permissions spread; retry once.
+          deploy || { echo "First attempt failed – retrying in 2 minutes"; sleep 120; deploy; }
 
       - name: Remove the key file
         if: always()
